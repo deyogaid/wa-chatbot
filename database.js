@@ -43,6 +43,64 @@ const initializeDatabase = () => {
             if (err) console.error("Error creating read_receipts table", err.message);
             else console.log('Tabel "read_receipts" siap digunakan.');
         });
+        
+        // --- TABEL SAAS & KONFIGURASI AI ---
+        db.run(`CREATE TABLE IF NOT EXISTS users (
+            id TEXT PRIMARY KEY,
+            username TEXT UNIQUE,
+            password TEXT
+        );`, (err) => {
+            if (!err) {
+                // Insert default admin for local preview
+                db.run(`INSERT OR IGNORE INTO users (id, username, password) VALUES ('admin', 'admin', 'admin123')`);
+                console.log('Tabel "users" siap digunakan.');
+            }
+        });
+
+        db.run(`CREATE TABLE IF NOT EXISTS ai_configs (
+            user_id TEXT PRIMARY KEY,
+            provider TEXT DEFAULT 'groq',
+            api_key TEXT,
+            model_name TEXT DEFAULT 'llama-3.3-70b-versatile',
+            system_prompt TEXT,
+            business_name TEXT DEFAULT 'Nama Bisnis Anda'
+        );`, (err) => {
+            if (!err) {
+                // Insert default config for admin
+                const defaultPrompt = "Anda adalah asisten virtual Customer Service. Jawab dengan ramah, informatif, dan ringkas. Selalu gunakan daftar harga yang diberikan.";
+                db.run(`INSERT OR IGNORE INTO ai_configs (user_id, system_prompt) VALUES ('admin', ?)`, [defaultPrompt]);
+                console.log('Tabel "ai_configs" siap digunakan.');
+            }
+        });
+
+        db.run(`CREATE TABLE IF NOT EXISTS products (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            kategori TEXT NOT NULL,
+            nama_produk TEXT NOT NULL,
+            harga INTEGER NOT NULL,
+            keterangan TEXT
+        );`, (err) => {
+            if (!err) {
+                // Migrate from pricelist.js if empty
+                db.get("SELECT COUNT(*) as count FROM products", (err, row) => {
+                    if (row && row.count === 0) {
+                        try {
+                            const priceData = require('./pricelist.js');
+                            const stmt = db.prepare("INSERT INTO products (user_id, kategori, nama_produk, harga, keterangan) VALUES ('admin', ?, ?, ?, ?)");
+                            priceData.produk.forEach(p => {
+                                stmt.run(p.kategori, p.nama_produk, p.harga, p.keterangan);
+                            });
+                            stmt.finalize();
+                            console.log("Berhasil memigrasi data dari pricelist.js ke database.");
+                        } catch (e) {
+                            console.error("Gagal migrasi pricelist.js", e.message);
+                        }
+                    }
+                });
+                console.log('Tabel "products" siap digunakan.');
+            }
+        });
     });
 };
 
@@ -110,4 +168,78 @@ const isMessageRead = (messageId) => {
     });
 };
 
-module.exports = { initializeDatabase, getOrAddCustomer, updateCustomerName, addMessageToHistory, getHistoryForJid, addReadReceipt, isMessageRead };
+// --- SAAS HELPERS ---
+const getAIConfig = (userId) => {
+    return new Promise((resolve, reject) => {
+        db.get(`SELECT * FROM ai_configs WHERE user_id = ?`, [userId], (err, row) => {
+            if (err) return reject(err);
+            resolve(row);
+        });
+    });
+};
+
+const updateAIConfig = (userId, config) => {
+    return new Promise((resolve, reject) => {
+        const { provider, api_key, model_name, system_prompt, business_name } = config;
+        db.run(
+            `UPDATE ai_configs SET provider = ?, api_key = ?, model_name = ?, system_prompt = ?, business_name = ? WHERE user_id = ?`,
+            [provider, api_key, model_name, system_prompt, business_name, userId],
+            function(err) {
+                if (err) reject(err);
+                else resolve({ changes: this.changes });
+            }
+        );
+    });
+};
+
+const getProducts = (userId) => {
+    return new Promise((resolve, reject) => {
+        db.all(`SELECT * FROM products WHERE user_id = ? ORDER BY kategori ASC`, [userId], (err, rows) => {
+            if (err) return reject(err);
+            resolve(rows);
+        });
+    });
+};
+
+const addProduct = (userId, product) => {
+    return new Promise((resolve, reject) => {
+        const { kategori, nama_produk, harga, keterangan } = product;
+        db.run(
+            `INSERT INTO products (user_id, kategori, nama_produk, harga, keterangan) VALUES (?, ?, ?, ?, ?)`,
+            [userId, kategori, nama_produk, harga, keterangan],
+            function(err) {
+                if (err) reject(err);
+                else resolve({ id: this.lastID });
+            }
+        );
+    });
+};
+
+const updateProduct = (id, userId, product) => {
+    return new Promise((resolve, reject) => {
+        const { kategori, nama_produk, harga, keterangan } = product;
+        db.run(
+            `UPDATE products SET kategori = ?, nama_produk = ?, harga = ?, keterangan = ? WHERE id = ? AND user_id = ?`,
+            [kategori, nama_produk, harga, keterangan, id, userId],
+            function(err) {
+                if (err) reject(err);
+                else resolve({ changes: this.changes });
+            }
+        );
+    });
+};
+
+const deleteProduct = (id, userId) => {
+    return new Promise((resolve, reject) => {
+        db.run(`DELETE FROM products WHERE id = ? AND user_id = ?`, [id, userId], function(err) {
+            if (err) reject(err);
+            else resolve({ changes: this.changes });
+        });
+    });
+};
+
+module.exports = { 
+    initializeDatabase, getOrAddCustomer, updateCustomerName, addMessageToHistory, 
+    getHistoryForJid, addReadReceipt, isMessageRead,
+    getAIConfig, updateAIConfig, getProducts, addProduct, updateProduct, deleteProduct
+};
