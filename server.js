@@ -73,6 +73,49 @@ app.delete('/api/products/:id', mockAuth, async (req, res) => {
     }
 });
 
+// --- FETCH MODELS ENDPOINT ---
+const axios = require('axios');
+app.post('/api/models', mockAuth, async (req, res) => {
+    const { provider, api_key } = req.body;
+    
+    if (!api_key && provider !== 'openrouter') {
+        return res.json({ success: false, error: 'API Key diperlukan untuk mengambil daftar model.' });
+    }
+
+    try {
+        let models = [];
+        if (provider === 'groq') {
+            const response = await axios.get('https://api.groq.com/openai/v1/models', {
+                headers: { Authorization: `Bearer ${api_key}` }
+            });
+            models = response.data.data.map(m => m.id);
+        } else if (provider === 'openai') {
+            const response = await axios.get('https://api.openai.com/v1/models', {
+                headers: { Authorization: `Bearer ${api_key}` }
+            });
+            models = response.data.data.map(m => m.id).filter(id => id.includes('gpt'));
+        } else if (provider === 'openrouter') {
+            const response = await axios.get('https://openrouter.ai/api/v1/models');
+            models = response.data.data.map(m => m.id);
+        } else if (provider === 'gemini') {
+            const response = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${api_key}`);
+            models = response.data.models.map(m => m.name.replace('models/', '')).filter(name => name.includes('gemini'));
+        } else {
+            return res.json({ success: false, error: 'Provider tidak didukung.' });
+        }
+        
+        // Urutkan model secara alfabet
+        models.sort();
+        res.json({ success: true, models });
+    } catch (err) {
+        let errorMsg = 'Gagal mengambil model. Periksa API Key Anda.';
+        if (err.response && err.response.data && err.response.data.error) {
+            errorMsg = err.response.data.error.message || err.response.data.error;
+        }
+        res.status(500).json({ success: false, error: errorMsg });
+    }
+});
+
 // Initialize DB and start server
 db.initializeDatabase();
 app.listen(PORT, () => {

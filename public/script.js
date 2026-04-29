@@ -48,7 +48,13 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('business-name').value = data.config.business_name || '';
                 document.getElementById('ai-provider').value = data.config.provider || 'groq';
                 document.getElementById('api-key').value = data.config.api_key || '';
-                document.getElementById('model-name').value = data.config.model_name || 'llama-3.3-70b-versatile';
+                
+                const modelSelect = document.getElementById('model-name');
+                const savedModel = data.config.model_name || 'llama-3.3-70b-versatile';
+                // Masukkan model tersimpan sebagai opsi awal
+                modelSelect.innerHTML = `<option value="${savedModel}">${savedModel}</option>`;
+                modelSelect.value = savedModel;
+                
                 document.getElementById('system-prompt').value = data.config.system_prompt || '';
                 
                 // Update brand headline
@@ -97,6 +103,70 @@ document.addEventListener('DOMContentLoaded', () => {
             btn.disabled = false;
             btn.innerHTML = '<i data-lucide="save"></i> Simpan Konfigurasi';
             lucide.createIcons();
+        }
+    });
+
+    // --- SYNC MODELS ---
+    async function syncModels() {
+        const provider = document.getElementById('ai-provider').value;
+        const apiKey = document.getElementById('api-key').value;
+        const btn = document.getElementById('btn-sync-models');
+        const modelSelect = document.getElementById('model-name');
+        const helpText = document.getElementById('model-help-text');
+
+        if (!apiKey && provider !== 'openrouter') {
+            showToast('API Key diperlukan untuk melihat model.', true);
+            return;
+        }
+
+        btn.disabled = true;
+        const originalBtnText = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="loader" class="spin" style="width:12px; height:12px;"></i> Loading...';
+        helpText.textContent = "Mengambil daftar model...";
+
+        try {
+            const response = await fetch('/api/models', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, api_key: apiKey })
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                modelSelect.innerHTML = '';
+                if (data.models.length === 0) {
+                    modelSelect.innerHTML = '<option value="">Tidak ada model ditemukan</option>';
+                } else {
+                    data.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model;
+                        option.textContent = model;
+                        modelSelect.appendChild(option);
+                    });
+                }
+                helpText.textContent = `${data.models.length} model berhasil dimuat.`;
+                showToast('Daftar model berhasil disinkronisasi');
+            } else {
+                showToast(data.error || 'Gagal sinkronisasi model', true);
+                helpText.textContent = "Gagal mengambil daftar model.";
+            }
+        } catch (err) {
+            showToast('Terjadi kesalahan jaringan', true);
+            helpText.textContent = "Gagal menghubungi server.";
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalBtnText;
+            lucide.createIcons();
+        }
+    }
+
+    document.getElementById('btn-sync-models').addEventListener('click', syncModels);
+
+    // Auto-sync ketika provider berubah (bila API Key sudah ada)
+    document.getElementById('ai-provider').addEventListener('change', () => {
+        const apiKey = document.getElementById('api-key').value;
+        if (apiKey || document.getElementById('ai-provider').value === 'openrouter') {
+            syncModels();
         }
     });
 
