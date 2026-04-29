@@ -1,0 +1,19 @@
+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
+
+import OpenAI from "openai";
+
+const openai = new OpenAI({
+        baseURL: 'https://api.deepseek.com',
+        apiKey: 'sk-66388cc140cd46a3be93b45e23a06145'
+});
+
+async function main() {
+  const completion = await openai.chat.completions.create({
+    messages: [{ role: "system", content: "You are a helpful assistant." }],
+    model: "deepseek-chat",
+  });
+
+  console.log(completion.choices[0].message.content);
+}
+
+main();
