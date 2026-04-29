@@ -22,7 +22,7 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios       = require('axios');
 const TelegramBot = require('node-telegram-bot-api');
 const db          = require('./database.js');
-const priceData   = require('./pricelist.js');
+const AIFactory   = require('./ai_factory.js');
 
 // =================================================================
 // 2. CONFIGURATION
@@ -80,52 +80,6 @@ const config = {
 // =================================================================
 const logger = pino({ transport: { target: 'pino-pretty' } });
 
-if (!config.geminiApiKey) {
-    logger.fatal('GEMINI_API_KEY tidak diatur. Program berhenti.');
-    process.exit(1);
-}
-
-// =================================================================
-// 4. INISIALISASI KLIEN AI
-// =================================================================
-
-// ── Lapis 1: Google Gemini ────────────────────────────────────────
-const genAI = new GoogleGenerativeAI(config.geminiApiKey);
-logger.info(`[AI-1] Gemini siap (${config.geminiModel}).`);
-
-// ── Lapis 2: OpenAI ───────────────────────────────────────────────
-const openai = new OpenAI({ apiKey: config.openaiApiKey || "dummy", timeout: 30_000 });
-logger.info(config.openaiApiKey ? '[AI-2] OpenAI siap.' : '[AI-2] OpenAI: API key kosong, akan dilewati.');
-
-// ── Lapis 3: OpenRouter ───────────────────────────────────────────
-const openrouter = new OpenAI({
-    apiKey:   config.openrouterApiKey || "dummy",
-    baseURL:  "https://openrouter.ai/api/v1",
-    timeout:  30_000,
-    defaultHeaders: {
-        "HTTP-Referer": "https://kartinidigitalprinting.com",
-        "X-Title":      config.businessName,
-    },
-});
-logger.info(
-    config.openrouterApiKey
-        ? `[AI-3] OpenRouter siap. Model cadangan: ${config.openrouterModels.join(' | ')}`
-        : '[AI-3] OpenRouter: API key kosong, akan dilewati.'
-);
-
-// ── Lapis 4: Groq (GRATIS, cepat) ────────────────────────────────
-const groq = new OpenAI({
-    apiKey:  config.groqApiKey || "dummy",
-    baseURL: "https://api.groq.com/openai/v1",
-    timeout: 20_000,   // Groq sangat cepat, timeout lebih pendek
-});
-logger.info(
-    config.groqApiKey
-        ? `[AI-4] Groq siap. Model cadangan: ${config.groqModels.join(' | ')}`
-        : '[AI-4] Groq: API key kosong, akan dilewati. Daftar GRATIS di https://console.groq.com'
-);
-
-// ── Telegram ──────────────────────────────────────────────────────
 let telegramBot;
 if (config.telegramBotToken && config.telegramChatId) {
     telegramBot = new TelegramBot(config.telegramBotToken, { polling: false });
@@ -135,33 +89,29 @@ if (config.telegramBotToken && config.telegramChatId) {
 const userActivityCache = {};
 
 // =================================================================
-// 5. SYSTEM PROMPT
+// 4. DYNAMIC SYSTEM PROMPT
 // =================================================================
-function formatPriceListForAI(data) {
+async function buildDynamicSystemPrompt(userId) {
+    const aiConfig = await db.getAIConfig(userId);
+    const products = await db.getProducts(userId);
+    
     const categories = {};
-    data.produk.forEach(p => {
+    products.forEach(p => {
         if (!categories[p.kategori]) categories[p.kategori] = [];
         const harga = p.harga.toLocaleString('id-ID');
         const ket   = p.keterangan ? ` (${p.keterangan})` : '';
         categories[p.kategori].push(`- ${p.nama_produk}${ket}: Rp${harga}`);
     });
-    return Object.entries(categories)
+    
+    const priceListString = Object.entries(categories)
         .map(([cat, items]) => `\nKategori: *${cat}*\n${items.join('\n')}`)
         .join('\n');
+        
+    const businessName = aiConfig?.business_name || "SaaS Bot";
+    const basePrompt = aiConfig?.system_prompt || `Anda adalah asisten virtual Customer Service untuk "${businessName}".`;
+
+    return `${basePrompt}\n\nATURAN UTAMA:\n1. JAWAB SINGKAT & JELAS: Langsung ke inti jawaban, hindari bertele-tele.\n2. GUNAKAN DAFTAR HARGA: Jangan pernah menebak harga. Gunakan harga PASTI sesuai daftar.\n3. SAPA PERSONAL: Sapa pelanggan dengan nama jika tersedia.\n4. HITUNG OTOMATIS: Bantu hitung biaya pesanan jika diminta (luas x harga, jumlah x satuan, dll).\n\n--- DAFTAR HARGA RESMI ---\n${priceListString}\n--- AKHIR DAFTAR HARGA ---`;
 }
-
-const priceListString    = formatPriceListForAI(priceData);
-const systemPromptContent = `Anda adalah asisten virtual Customer Service untuk "${config.businessName}". Melayani pelanggan dengan informatif, profesional, ramah, dan efisien.
-
-ATURAN UTAMA:
-1. JAWAB SINGKAT & JELAS: Langsung ke inti jawaban, hindari bertele-tele.
-2. GUNAKAN DAFTAR HARGA: Jangan pernah menebak harga. Gunakan harga PASTI sesuai daftar.
-3. SAPA PERSONAL: Sapa pelanggan dengan nama jika tersedia.
-4. HITUNG OTOMATIS: Bantu hitung biaya pesanan jika diminta (luas x harga, jumlah x satuan, dll).
-
---- DAFTAR HARGA RESMI ---
-${priceListString}
---- AKHIR DAFTAR HARGA ---`;
 
 // =================================================================
 // 6. HELPER FUNCTIONS
@@ -182,179 +132,57 @@ const getMessageContent = (msg) =>
     msg.message?.videoMessage?.caption         || "";
 
 // =================================================================
-// 7. FUNGSI AI – SISTEM FALLBACK 4 LAPIS
+// 6. FUNGSI AI (DYNAMIC)
 // =================================================================
 
-/**
- * Coba semua model dari satu provider secara berurutan.
- * Lanjut ke model berikutnya hanya jika error 404 / "No endpoints".
- * Error lain (rate limit, server, dll) → berhenti dan lempar ke lapis berikutnya.
- */
-async function tryModels(client, models, messages, layerName) {
-    for (const model of models) {
-        try {
-            logger.info(`   ${layerName} – mencoba model: ${model}`);
-            const res   = await client.chat.completions.create({ model, messages });
-            const reply = res.choices[0]?.message?.content?.trim();
-            if (reply) {
-                logger.info(`   ${layerName} – berhasil dengan model: ${model}`);
-                return reply;
-            }
-            logger.warn(`   ${layerName} – model ${model} mengembalikan respons kosong.`);
-        } catch (err) {
-            const msg         = err.message || "";
-            const is404       = msg.includes('404') || msg.includes('No endpoints') || msg.includes('not found');
-            const isRateLimit = msg.includes('429') || msg.includes('rate') || msg.includes('quota');
-
-            if (is404) {
-                logger.warn(`   ${layerName} – ${model}: tidak tersedia (404), coba model berikutnya...`);
-                continue; // Coba model berikutnya di provider yang sama
-            }
-            if (isRateLimit) {
-                logger.warn(`   ${layerName} – ${model}: rate limit/quota habis. Pindah ke lapis berikutnya.`);
-                break; // Rate limit? Tidak perlu coba model lain di provider ini
-            }
-            // Error lain
-            logger.error({ err: msg }, `   ${layerName} – ${model}: error tidak terduga.`);
-            break;
-        }
-    }
-    return null;
-}
-
-/**
- * getAIReply – Balasan AI dengan 4 lapis fallback:
- *   1. Gemini 2.0-flash     (Google, gratis dengan API key)
- *   2. OpenAI gpt-4o-mini   (berbayar, skip jika quota habis)
- *   3. OpenRouter            (5 model free dicoba berurutan)
- *   4. Groq                  (GRATIS, cepat, sangat direkomendasikan)
- */
 async function getAIReply(userText, history = [], customerName = null) {
+    const userId = 'admin'; // Single-tenant fallback
+    const config = await db.getAIConfig(userId);
+    
+    if (!config || !config.api_key) {
+        logger.error(`API Key belum dikonfigurasi untuk user: ${userId}`);
+        return "Maaf, sistem AI belum dikonfigurasi oleh pemilik bot. Silakan masukkan API Key di Dashboard.";
+    }
+
+    const systemPrompt = await buildDynamicSystemPrompt(userId);
     const now = new Date();
     const wibTime = { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false };
     const wibDate = { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long' };
+    
+    let timeContext = `\n\n[Waktu Sekarang]: Hari ${now.toLocaleDateString('id-ID', wibDate)}, pukul ${now.toLocaleTimeString('id-ID', wibTime)} WIB.`;
+    
+    const fullConfig = {
+        ...config,
+        system_prompt: systemPrompt + timeContext
+    };
 
-    // Prompt teks penuh untuk Gemini
-    let geminiPrompt = systemPromptContent;
-    geminiPrompt += `\n\n[Waktu Sekarang]: Hari ${now.toLocaleDateString('id-ID', wibDate)}, pukul ${now.toLocaleTimeString('id-ID', wibTime)} WIB.`;
-    if (customerName) geminiPrompt += `\n[Nama Pelanggan]: "${customerName}"`;
-    geminiPrompt += "\n\n--- RIWAYAT CHAT ---\n";
-    geminiPrompt += history.length > 0
-        ? history.map(m => `${m.role === 'user' ? 'Pelanggan' : 'CS'}: ${m.content}`).join('\n')
-        : "(Percakapan baru)";
-    geminiPrompt += `\n\nPelanggan: ${userText}\nCS:`;
-
-    // Format pesan OpenAI/OpenRouter/Groq
-    const messages = [
-        { role: "system", content: systemPromptContent },
-        ...history,
-        { role: "user", content: userText },
-    ];
-
-    // ── Lapis 1: Gemini ──────────────────────────────────────────
-    logger.info(`[AI-1] Menghubungi Gemini (${config.geminiModel})...`);
-    try {
-        const model  = genAI.getGenerativeModel({ model: config.geminiModel });
-        const result = await model.generateContent(geminiPrompt);
-        const reply  = result.response.text()?.trim();
-        if (reply) { logger.info('[AI-1] Gemini berhasil.'); return reply; }
-        throw new Error("Respons kosong.");
-    } catch (e) {
-        logger.error({ err: e.message }, '[AI-1] Gemini gagal -> coba lapis 2...');
-    }
-
-    // ── Lapis 2: OpenAI ──────────────────────────────────────────
-    if (config.openaiApiKey) {
-        logger.info('[AI-2] Menghubungi OpenAI (gpt-4o-mini)...');
-        try {
-            const res   = await openai.chat.completions.create({ model: "gpt-4o-mini", messages });
-            const reply = res.choices[0]?.message?.content?.trim();
-            if (reply) { logger.info('[AI-2] OpenAI berhasil.'); return reply; }
-        } catch (e) {
-            const label = (e.message?.includes('429') || e.message?.includes('quota'))
-                ? 'quota habis' : 'error';
-            logger.error({ err: e.message }, `[AI-2] OpenAI ${label} -> coba lapis 3...`);
-        }
-    } else {
-        logger.warn('[AI-2] OpenAI dilewati (tidak ada API key) -> coba lapis 3...');
-    }
-
-    // ── Lapis 3: OpenRouter ──────────────────────────────────────
-    if (config.openrouterApiKey) {
-        logger.info('[AI-3] Menghubungi OpenRouter...');
-        const reply = await tryModels(openrouter, config.openrouterModels, messages, 'OpenRouter');
-        if (reply) { logger.info('[AI-3] OpenRouter berhasil.'); return reply; }
-        logger.error('[AI-3] Semua model OpenRouter gagal -> coba lapis 4...');
-    } else {
-        logger.warn('[AI-3] OpenRouter dilewati (tidak ada API key) -> coba lapis 4...');
-    }
-
-    // ── Lapis 4: Groq (GRATIS & CEPAT) ──────────────────────────
-    if (config.groqApiKey) {
-        logger.info('[AI-4] Menghubungi Groq...');
-        const reply = await tryModels(groq, config.groqModels, messages, 'Groq');
-        if (reply) { logger.info('[AI-4] Groq berhasil!'); return reply; }
-        logger.error('[AI-4] Semua model Groq gagal.');
-    } else {
-        logger.warn('[AI-4] Groq dilewati (tidak ada API key). Daftar GRATIS: https://console.groq.com');
-    }
-
-    // ── Semua lapis gagal ────────────────────────────────────────
-    logger.error('Semua 4 lapis AI gagal. Mengirim pesan manual ke pelanggan.');
-    return "Maaf, sistem kami sedang mengalami kendala teknis. Tim kami akan segera merespon. Terima kasih atas kesabarannya!";
+    logger.info(`Menghubungi AI Factory (${fullConfig.provider})...`);
+    return await AIFactory.generateReply(fullConfig, userText, history, customerName);
 }
 
 /**
- * summarizeConversation – Rangkum chat dengan fallback Gemini -> Groq
+ * summarizeConversation
  */
 async function summarizeConversation(history) {
     if (!history?.length) return null;
     const text   = history.map(m => `${m.role === 'user' ? 'Pelanggan' : 'Bot'}: ${m.content}`).join('\n');
     const prompt = `Buat rangkuman singkat poin-poin dari percakapan CS percetakan ini:\n\n${text}`;
-    const msgs   = [{ role: "user", content: prompt }];
-
-    // Coba Gemini
-    try {
-        const model  = genAI.getGenerativeModel({ model: config.geminiModel });
-        const result = await model.generateContent(prompt);
-        const summ   = result.response.text()?.trim();
-        if (summ) return summ;
-    } catch (e) {
-        logger.error({ err: e.message }, '[Rangkuman] Gemini gagal -> coba Groq...');
-    }
-
-    // Fallback Groq (lebih cepat & gratis)
-    if (config.groqApiKey) {
-        const summ = await tryModels(groq, config.groqModels, msgs, 'Groq-Rangkuman');
-        if (summ) return summ;
-    }
-
-    // Fallback OpenRouter
-    if (config.openrouterApiKey) {
-        const summ = await tryModels(openrouter, config.openrouterModels, msgs, 'OpenRouter-Rangkuman');
-        if (summ) return summ;
-    }
-
-    return "Gagal membuat rangkuman otomatis.";
+    
+    const userId = 'admin';
+    const config = await db.getAIConfig(userId);
+    if (!config || !config.api_key) return "Gagal merangkum: API Key belum dikonfigurasi.";
+    
+    return await AIFactory.generateReply(config, prompt, [], null);
 }
 
 /**
- * classifyImageWithAI – Klasifikasi gambar via Gemini Vision
+ * classifyImageWithAI – Klasifikasi gambar
  */
 async function classifyImageWithAI(imageBuffer) {
-    const b64    = imageBuffer.toString('base64');
-    const prompt = "Analisis gambar ini. Balas HANYA dengan satu kata: 'bukti_pembayaran', 'dokumen', atau 'gambar_umum'.";
-    try {
-        const model  = genAI.getGenerativeModel({ model: config.geminiModel });
-        const result = await model.generateContent([
-            prompt,
-            { inlineData: { data: b64, mimeType: 'image/jpeg' } },
-        ]);
-        return result.response.text().trim().toLowerCase().replace(/['"`\s]/g, '');
-    } catch (e) {
-        logger.error({ err: e.message }, 'Vision AI gagal. Default: gambar_umum.');
-        return 'gambar_umum';
-    }
+    // Saat ini disederhanakan karena tidak semua API Key (seperti Groq Llama 3 standar) 
+    // mendukung Vision secara native. 
+    // Untuk pengembangan SaaS lebih lanjut, ini akan menggunakan provider yang mendukung vision (contoh: OpenAI gpt-4o / Gemini).
+    return 'gambar_umum';
 }
 
 // =================================================================

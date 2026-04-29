@@ -50,6 +50,11 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('api-key').value = data.config.api_key || '';
                 document.getElementById('model-name').value = data.config.model_name || 'llama-3.3-70b-versatile';
                 document.getElementById('system-prompt').value = data.config.system_prompt || '';
+                
+                // Update brand headline
+                if (data.config.business_name) {
+                    document.getElementById('brand-name').innerText = data.config.business_name;
+                }
             }
         } catch (err) {
             showToast('Gagal memuat konfigurasi AI', true);
@@ -81,6 +86,8 @@ document.addEventListener('DOMContentLoaded', () => {
             
             if (data.success) {
                 showToast('Konfigurasi AI berhasil disimpan!');
+                // Synchronize headline
+                document.getElementById('brand-name').innerText = config.business_name || 'KartiniBot';
             } else {
                 showToast(data.error || 'Gagal menyimpan', true);
             }
