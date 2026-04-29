@@ -70,8 +70,16 @@
                                     <small class="help-text">Dapatkan API Key gratis di: <a href="https://console.groq.com/keys" target="_blank">Groq Console</a> atau <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>.</small>
                                 </div>
                                 <div class="form-group">
-                                    <label>Model AI</label>
-                                    <input type="text" id="model-name" placeholder="Contoh: llama-3.3-70b-versatile" required>
+                                    <label class="flex-between">
+                                        <span>Model AI</span>
+                                        <button type="button" id="btn-sync-models" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.8rem;">
+                                            <i data-lucide="refresh-cw" style="width:12px; height:12px;"></i> Sinkronisasi
+                                        </button>
+                                    </label>
+                                    <select id="model-name">
+                                        <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
+                                    </select>
+                                    <small id="model-help-text" class="help-text">Pilih provider dan isi API Key, lalu klik Sinkronisasi untuk melihat daftar model.</small>
                                 </div>
                                 <div class="form-group">
                                     <label>System Prompt (Instruksi Dasar Bot)</label>
