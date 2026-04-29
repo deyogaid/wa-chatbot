@@ -1,5 +1,6 @@
 const { OpenAI } = require("openai");
 const { GoogleGenerativeAI } = require("@google/generative-ai");
+const db = require("./database");
 
 /**
  * AI Factory
@@ -30,6 +31,10 @@ class AIFactory {
             }
         } catch (error) {
             console.error(`[AI Factory Error] Provider: ${provider}`, error.message);
+            if (config.user_id) {
+                // Jangan ditunggu (fire and forget) agar tidak memblokir respon WA
+                db.addSystemAlert(config.user_id, `Gagal memproses pesan via ${provider}: ${error.message}`).catch(err => console.error('Gagal menyimpan alert', err));
+            }
             return "Maaf, terjadi gangguan pada sistem kecerdasan buatan kami saat memproses pesan Anda.";
         }
     }
