@@ -82,22 +82,6 @@ const initializeDatabase = () => {
             keterangan TEXT
         );`, (err) => {
             if (!err) {
-                // Migrate from pricelist.js if empty
-                db.get("SELECT COUNT(*) as count FROM products", (err, row) => {
-                    if (row && row.count === 0) {
-                        try {
-                            const priceData = require('./pricelist.js');
-                            const stmt = db.prepare("INSERT INTO products (user_id, kategori, nama_produk, harga, keterangan) VALUES ('admin', ?, ?, ?, ?)");
-                            priceData.produk.forEach(p => {
-                                stmt.run(p.kategori, p.nama_produk, p.harga, p.keterangan);
-                            });
-                            stmt.finalize();
-                            console.log("Berhasil memigrasi data dari pricelist.js ke database.");
-                        } catch (e) {
-                            console.error("Gagal migrasi pricelist.js", e.message);
-                        }
-                    }
-                });
                 console.log('Tabel "products" siap digunakan.');
             }
         });
