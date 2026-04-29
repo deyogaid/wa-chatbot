@@ -110,7 +110,15 @@ async function buildDynamicSystemPrompt(userId) {
     const businessName = aiConfig?.business_name || "SaaS Bot";
     const basePrompt = aiConfig?.system_prompt || `Anda adalah asisten virtual Customer Service untuk "${businessName}".`;
 
-    return `${basePrompt}\n\nATURAN UTAMA:\n1. JAWAB SINGKAT & JELAS: Langsung ke inti jawaban, hindari bertele-tele.\n2. GUNAKAN DAFTAR HARGA: Jangan pernah menebak harga. Gunakan harga PASTI sesuai daftar.\n3. SAPA PERSONAL: Sapa pelanggan dengan nama jika tersedia.\n4. HITUNG OTOMATIS: Bantu hitung biaya pesanan jika diminta (luas x harga, jumlah x satuan, dll).\n\n--- DAFTAR HARGA RESMI ---\n${priceListString}\n--- AKHIR DAFTAR HARGA ---`;
+    let companyContext = "";
+    if (aiConfig?.company_email) companyContext += `- Email: ${aiConfig.company_email}\n`;
+    if (aiConfig?.company_address) companyContext += `- Alamat: ${aiConfig.company_address}\n`;
+    if (aiConfig?.company_social) companyContext += `- Sosial Media: ${aiConfig.company_social}\n`;
+    if (aiConfig?.company_maps) companyContext += `- Maps: ${aiConfig.company_maps}\n`;
+    if (aiConfig?.business_context) companyContext += `\nKonteks Tambahan Bisnis:\n${aiConfig.business_context}\n`;
+
+    const fullPrompt = `${basePrompt}\n\nATURAN UTAMA:\n1. JAWAB SINGKAT & JELAS: Langsung ke inti jawaban, hindari bertele-tele.\n2. GUNAKAN DAFTAR HARGA: Jangan pernah menebak harga. Gunakan harga PASTI sesuai daftar.\n3. SAPA PERSONAL: Sapa pelanggan dengan nama jika tersedia.\n4. HITUNG OTOMATIS: Bantu hitung biaya pesanan jika diminta (luas x harga, jumlah x satuan, dll).\n\n--- PROFIL PERUSAHAAN ---\n${companyContext}\n--- DAFTAR HARGA RESMI ---\n${priceListString}\n--- AKHIR DAFTAR HARGA ---`;
+    return fullPrompt;
 }
 
 // =================================================================
@@ -312,16 +320,13 @@ const handleMessagesUpsert = (sock) => async ({ messages }) => {
         return;
     }
 
-    // Command statis
-    const cmds = {
-        '/layanan':   `*Layanan Kami:*\n\n*Print Digital:* Poster, Flyer, Brosur\n*Print Besar:* Banner, Spanduk, Stiker Vinyl\n*Merchandise:* Kaos, Mug, Totebag\n\nTanya harga detail langsung ya!`,
-        '/carapesan': `*Cara Pesan:*\n\n1. Kirim file desain ke: *${config.email}*\n2. Konfirmasi ukuran, material & jumlah.\n3. Bayar setelah total dikonfirmasi.\n4. Pesanan diproses & siap!`,
-        '/alamat':    `*Lokasi:*\n${config.address}\n\nMaps: ${config.gmapsUrl}\n\nBuka 24 Jam!`,
-    };
-
-    if (cmds[command]) {
-        await sendMessageWTyping(sock, sender, { text: cmds[command] }, { quoted: msg });
-        await db.addMessageToHistory(sender, 'assistant', cmds[command]);
+    // Command FAQ Dinamis (Balasan Cepat)
+    const faqs = await db.getFaqs('admin');
+    const matchedFaq = faqs.find(f => f.command.toLowerCase() === command);
+    
+    if (matchedFaq) {
+        await sendMessageWTyping(sock, sender, { text: matchedFaq.response }, { quoted: msg });
+        await db.addMessageToHistory(sender, 'assistant', matchedFaq.response);
         return;
     }
     if (navCmds.includes(command)) {

@@ -26,6 +26,10 @@
                     <i data-lucide="tag"></i>
                     <span>Daftar Harga</span>
                 </a>
+                <a href="#" class="nav-item" data-tab="kelola-faq">
+                    <i data-lucide="message-square"></i>
+                    <span>Balasan Cepat (FAQ)</span>
+                </a>
             </nav>
             <div class="sidebar-footer">
                 <p>Versi 1.0 (Local Preview)</p>
@@ -36,7 +40,24 @@
         <main class="main-content">
             <header class="topbar">
                 <h1>Dashboard UMKM</h1>
-                <div class="user-profile">
+                <div class="user-profile" style="display: flex; align-items: center; gap: 20px;">
+                    <!-- Notification Bell -->
+                    <div class="notification-wrapper" id="notification-bell" style="position: relative; cursor: pointer;">
+                        <i data-lucide="bell" style="color: var(--text-muted); width: 24px; height: 24px;"></i>
+                        <span id="notification-badge" class="badge-danger" style="display: none;">0</span>
+                        
+                        <!-- Dropdown panel -->
+                        <div id="notification-dropdown" class="dropdown-panel" style="display: none;">
+                            <div class="dropdown-header">
+                                <h4>Status & Kendala Bot</h4>
+                                <button id="btn-read-alerts" class="btn btn-sm btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;">Tandai Dibaca</button>
+                            </div>
+                            <div class="dropdown-body" id="notification-list">
+                                <div class="empty-state">Semua sistem normal.</div>
+                            </div>
+                        </div>
+                    </div>
+                    
                     <span class="user-badge">Admin</span>
                 </div>
             </header>
@@ -85,11 +106,44 @@
                                     <label>System Prompt (Instruksi Dasar Bot)</label>
                                     <textarea id="system-prompt" rows="5" placeholder="Instruksi untuk CS Bot..." required></textarea>
                                 </div>
-                                <button type="submit" class="btn btn-primary">
+                                <button type="submit" class="btn btn-primary" id="btn-save-config">
                                     <i data-lucide="save"></i> Simpan Konfigurasi
                                 </button>
                             </form>
                         </div>
+                    </div>
+
+                    <div class="card" style="margin-top: 20px;">
+                        <div class="card-header">
+                            <h2>Profil Perusahaan & Konteks AI</h2>
+                            <p>Data ini akan digunakan AI untuk menjawab pertanyaan spesifik seputar bisnis Anda.</p>
+                        </div>
+                        <form id="profile-form">
+                            <div class="form-group">
+                                <label>Email Bisnis</label>
+                                <input type="email" id="company-email" placeholder="Contoh: cs@bisnissaya.com">
+                            </div>
+                            <div class="form-group">
+                                <label>Alamat Lengkap Toko/Kantor</label>
+                                <textarea id="company-address" rows="2" placeholder="Contoh: Jl. Sudirman No. 123, Jakarta"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Sosial Media (IG/Tiktok dll)</label>
+                                <input type="text" id="company-social" placeholder="Contoh: IG: @bisnissaya | Tiktok: @bisnissaya">
+                            </div>
+                            <div class="form-group">
+                                <label>Link Google Maps</label>
+                                <input type="text" id="company-maps" placeholder="Contoh: https://maps.app.goo.gl/xxx">
+                            </div>
+                            <div class="form-group">
+                                <label>Konteks/Aturan Bisnis Ekstra (Opsional)</label>
+                                <textarea id="business-context" rows="3" placeholder="Contoh: Kami tidak menerima desain yang mengandung unsur SARA. Pengerjaan express tambah biaya 20%"></textarea>
+                                <small class="help-text">Informasi tambahan agar AI semakin pintar mengenali aturan spesifik bisnis Anda.</small>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="btn-save-profile">
+                                <i data-lucide="save"></i> Simpan Profil
+                            </button>
+                        </form>
                     </div>
                 </section>
 
@@ -128,6 +182,35 @@
                         </div>
                     </div>
                 </section>
+
+                <!-- KELOLA FAQ -->
+                <section id="kelola-faq" class="tab-pane">
+                    <div class="card">
+                        <div class="card-header flex-between">
+                            <div>
+                                <h2>Balasan Cepat (FAQ)</h2>
+                                <p>Jika pelanggan mengetik kata kunci ini persis, bot akan membalas langsung tanpa menggunakan kuota AI.</p>
+                            </div>
+                            <button class="btn btn-primary" onclick="showFaqModal()">
+                                <i data-lucide="plus"></i> Tambah FAQ
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Kata Kunci / Command</th>
+                                        <th>Balasan Statis</th>
+                                        <th style="width: 100px;">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="faq-list">
+                                    <tr><td colspan="3" style="text-align: center;">Memuat data...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
             </div>
         </main>
     </div>
@@ -159,6 +242,32 @@
                 </div>
                 <div class="modal-footer">
                     <button type="button" class="btn btn-secondary close-modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal FAQ -->
+    <div id="faq-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="faq-modal-title">Tambah Balasan Cepat</h3>
+                <button class="close-modal" onclick="closeFaqModal()">&times;</button>
+            </div>
+            <form id="faq-form">
+                <input type="hidden" id="faq-id">
+                <div class="form-group">
+                    <label>Kata Kunci / Command</label>
+                    <input type="text" id="faq-command" placeholder="Contoh: /layanan atau alamat" required>
+                    <small class="help-text">Jika pelanggan mengetik persis teks ini, bot akan membalas otomatis.</small>
+                </div>
+                <div class="form-group">
+                    <label>Balasan Statis</label>
+                    <textarea id="faq-response" rows="5" placeholder="Contoh: Layanan kami meliputi..." required></textarea>
+                </div>
+                <div class="form-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeFaqModal()">Batal</button>
                     <button type="submit" class="btn btn-primary">Simpan</button>
                 </div>
             </form>

@@ -73,6 +73,44 @@ app.delete('/api/products/:id', mockAuth, async (req, res) => {
     }
 });
 
+// --- FAQ ENDPOINTS ---
+
+app.get('/api/faqs', mockAuth, async (req, res) => {
+    try {
+        const faqs = await db.getFaqs(req.user.id);
+        res.json({ success: true, faqs });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/faqs', mockAuth, async (req, res) => {
+    try {
+        const result = await db.addFaq(req.user.id, req.body);
+        res.json({ success: true, id: result.id, message: 'FAQ added successfully' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.put('/api/faqs/:id', mockAuth, async (req, res) => {
+    try {
+        await db.updateFaq(req.params.id, req.user.id, req.body);
+        res.json({ success: true, message: 'FAQ updated successfully' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.delete('/api/faqs/:id', mockAuth, async (req, res) => {
+    try {
+        await db.deleteFaq(req.params.id, req.user.id);
+        res.json({ success: true, message: 'FAQ deleted successfully' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
 // --- FETCH MODELS ENDPOINT ---
 const axios = require('axios');
 app.post('/api/models', mockAuth, async (req, res) => {
@@ -113,6 +151,26 @@ app.post('/api/models', mockAuth, async (req, res) => {
             errorMsg = err.response.data.error.message || err.response.data.error;
         }
         res.status(500).json({ success: false, error: errorMsg });
+    }
+});
+
+// --- SYSTEM ALERTS ENDPOINTS ---
+app.get('/api/alerts', mockAuth, async (req, res) => {
+    try {
+        const alerts = await db.getSystemAlerts(req.user.id);
+        const unreadCount = alerts.filter(a => a.is_read === 0).length;
+        res.json({ success: true, alerts, unreadCount });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/alerts/read', mockAuth, async (req, res) => {
+    try {
+        await db.markAlertsAsRead(req.user.id);
+        res.json({ success: true, message: 'Alerts marked as read' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
     }
 });
 

@@ -63,9 +63,20 @@ const initializeDatabase = () => {
             api_key TEXT,
             model_name TEXT DEFAULT 'llama-3.3-70b-versatile',
             system_prompt TEXT,
-            business_name TEXT DEFAULT 'Nama Bisnis Anda'
+            business_name TEXT DEFAULT 'Nama Bisnis Anda',
+            company_email TEXT,
+            company_address TEXT,
+            company_social TEXT,
+            company_maps TEXT,
+            business_context TEXT
         );`, (err) => {
             if (!err) {
+                // Tambahkan kolom baru jika tabel sudah ada (migrasi)
+                const columns = ['company_email', 'company_address', 'company_social', 'company_maps', 'business_context'];
+                columns.forEach(col => {
+                    db.run(`ALTER TABLE ai_configs ADD COLUMN ${col} TEXT`, () => {}); // Ignore error if exists
+                });
+
                 // Insert default config for admin
                 const defaultPrompt = "Anda adalah asisten virtual Customer Service. Jawab dengan ramah, informatif, dan ringkas. Selalu gunakan daftar harga yang diberikan.";
                 db.run(`INSERT OR IGNORE INTO ai_configs (user_id, system_prompt) VALUES ('admin', ?)`, [defaultPrompt]);
@@ -84,6 +95,26 @@ const initializeDatabase = () => {
             if (!err) {
                 console.log('Tabel "products" siap digunakan.');
             }
+        });
+        db.run(`CREATE TABLE IF NOT EXISTS system_alerts (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            message TEXT NOT NULL,
+            is_read BOOLEAN DEFAULT 0,
+            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        );`, (err) => {
+            if (!err) {
+                console.log('Tabel "system_alerts" siap digunakan.');
+            }
+        });
+
+        db.run(`CREATE TABLE IF NOT EXISTS faqs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT NOT NULL,
+            command TEXT NOT NULL,
+            response TEXT NOT NULL
+        );`, (err) => {
+            if (!err) console.log('Tabel "faqs" siap digunakan.');
         });
     });
 };
@@ -164,10 +195,10 @@ const getAIConfig = (userId) => {
 
 const updateAIConfig = (userId, config) => {
     return new Promise((resolve, reject) => {
-        const { provider, api_key, model_name, system_prompt, business_name } = config;
+        const { provider, api_key, model_name, system_prompt, business_name, company_email, company_address, company_social, company_maps, business_context } = config;
         db.run(
-            `UPDATE ai_configs SET provider = ?, api_key = ?, model_name = ?, system_prompt = ?, business_name = ? WHERE user_id = ?`,
-            [provider, api_key, model_name, system_prompt, business_name, userId],
+            `UPDATE ai_configs SET provider = ?, api_key = ?, model_name = ?, system_prompt = ?, business_name = ?, company_email = ?, company_address = ?, company_social = ?, company_maps = ?, business_context = ? WHERE user_id = ?`,
+            [provider, api_key, model_name, system_prompt, business_name, company_email, company_address, company_social, company_maps, business_context, userId],
             function(err) {
                 if (err) reject(err);
                 else resolve({ changes: this.changes });
@@ -222,8 +253,85 @@ const deleteProduct = (id, userId) => {
     });
 };
 
+// --- FAQs ---
+const getFaqs = (userId) => {
+    return new Promise((resolve, reject) => {
+        db.all(`SELECT * FROM faqs WHERE user_id = ? ORDER BY command ASC`, [userId], (err, rows) => {
+            if (err) return reject(err);
+            resolve(rows);
+        });
+    });
+};
+
+const addFaq = (userId, faq) => {
+    return new Promise((resolve, reject) => {
+        db.run(
+            `INSERT INTO faqs (user_id, command, response) VALUES (?, ?, ?)`,
+            [userId, faq.command, faq.response],
+            function(err) {
+                if (err) reject(err);
+                else resolve({ id: this.lastID });
+            }
+        );
+    });
+};
+
+const updateFaq = (id, userId, faq) => {
+    return new Promise((resolve, reject) => {
+        db.run(
+            `UPDATE faqs SET command = ?, response = ? WHERE id = ? AND user_id = ?`,
+            [faq.command, faq.response, id, userId],
+            function(err) {
+                if (err) reject(err);
+                else resolve({ changes: this.changes });
+            }
+        );
+    });
+};
+
+const deleteFaq = (id, userId) => {
+    return new Promise((resolve, reject) => {
+        db.run(`DELETE FROM faqs WHERE id = ? AND user_id = ?`, [id, userId], function(err) {
+            if (err) reject(err);
+            else resolve({ changes: this.changes });
+        });
+    });
+};
+
+// --- SYSTEM ALERTS ---
+const addSystemAlert = (userId, message) => {
+    return new Promise((resolve, reject) => {
+        db.run(`INSERT INTO system_alerts (user_id, message) VALUES (?, ?)`, [userId, message], function(err) {
+            if (err) return reject(err);
+            // Limit to last 20 alerts per user
+            db.run(`DELETE FROM system_alerts WHERE id IN (SELECT id FROM system_alerts WHERE user_id = ? ORDER BY timestamp DESC LIMIT -1 OFFSET 20)`, [userId]);
+            resolve({ id: this.lastID });
+        });
+    });
+};
+
+const getSystemAlerts = (userId) => {
+    return new Promise((resolve, reject) => {
+        db.all(`SELECT id, message, is_read, timestamp FROM system_alerts WHERE user_id = ? ORDER BY timestamp DESC LIMIT 20`, [userId], (err, rows) => {
+            if (err) return reject(err);
+            resolve(rows);
+        });
+    });
+};
+
+const markAlertsAsRead = (userId) => {
+    return new Promise((resolve, reject) => {
+        db.run(`UPDATE system_alerts SET is_read = 1 WHERE user_id = ? AND is_read = 0`, [userId], function(err) {
+            if (err) reject(err);
+            else resolve({ changes: this.changes });
+        });
+    });
+};
+
 module.exports = { 
     initializeDatabase, getOrAddCustomer, updateCustomerName, addMessageToHistory, 
     getHistoryForJid, addReadReceipt, isMessageRead,
-    getAIConfig, updateAIConfig, getProducts, addProduct, updateProduct, deleteProduct
+    getAIConfig, updateAIConfig, getProducts, addProduct, updateProduct, deleteProduct,
+    getFaqs, addFaq, updateFaq, deleteFaq,
+    addSystemAlert, getSystemAlerts, markAlertsAsRead
 };
