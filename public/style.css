@@ -483,3 +483,46 @@ body {
 .spin {
     animation: spin 1s linear infinite;
 }
+
+/* Mobile Responsive */
+@media (max-width: 768px) {
+    .app-container {
+        flex-direction: column;
+    }
+    .sidebar {
+        width: 100%;
+        height: auto;
+        position: relative;
+        border-right: none;
+        border-bottom: 1px solid var(--border);
+    }
+    .main-content {
+        margin-left: 0;
+    }
+    .nav-menu {
+        flex-direction: row;
+        overflow-x: auto;
+        padding: 10px;
+    }
+    .nav-item {
+        white-space: nowrap;
+    }
+    .topbar {
+        padding: 0 16px;
+    }
+    .topbar h1 {
+        font-size: 1.1rem;
+    }
+    .content-area {
+        padding: 16px;
+    }
+    .flex-between {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    .card-header .btn {
+        width: 100%;
+        justify-content: center;
+    }
+}
