@@ -50,10 +50,16 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('api-key').value = data.config.api_key || '';
                 
                 const modelSelect = document.getElementById('model-name');
-                const savedModel = data.config.model_name || 'llama-3.3-70b-versatile';
+                const savedModel = data.config.model_name || data.config.model || 'llama-3.3-70b-versatile';
                 // Masukkan model tersimpan sebagai opsi awal
                 modelSelect.innerHTML = `<option value="${savedModel}">${savedModel}</option>`;
                 modelSelect.value = savedModel;
+                
+                // Otomatis sinkronisasi model saat load (menggunakan savedModel)
+                if (data.config.api_key || data.config.provider === 'openrouter') {
+                    // Karena ini di awal, kita beri sedikit delay agar UI stabil
+                    setTimeout(() => syncModels(savedModel), 500);
+                }
                 
                 document.getElementById('system-prompt').value = data.config.system_prompt || '';
                 
@@ -124,7 +130,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- SYNC MODELS ---
-    async function syncModels() {
+    async function syncModels(savedModelToSelect = null) {
         const provider = document.getElementById('ai-provider').value;
         const apiKey = document.getElementById('api-key').value;
         const btn = document.getElementById('btn-sync-models');
@@ -160,6 +166,11 @@ document.addEventListener('DOMContentLoaded', () => {
                         option.textContent = model;
                         modelSelect.appendChild(option);
                     });
+                    
+                    // Jika ada parameter savedModelToSelect, set itu sebagai yang dipilih
+                    if (typeof savedModelToSelect === 'string' && data.models.includes(savedModelToSelect)) {
+                        modelSelect.value = savedModelToSelect;
+                    }
                 }
                 helpText.textContent = `${data.models.length} model berhasil dimuat.`;
                 showToast('Daftar model berhasil disinkronisasi');
@@ -177,12 +188,20 @@ document.addEventListener('DOMContentLoaded', () => {
         }
     }
 
-    document.getElementById('btn-sync-models').addEventListener('click', syncModels);
+    document.getElementById('btn-sync-models').addEventListener('click', () => syncModels());
 
     // Auto-sync ketika provider berubah (bila API Key sudah ada)
     document.getElementById('ai-provider').addEventListener('change', () => {
         const apiKey = document.getElementById('api-key').value;
         if (apiKey || document.getElementById('ai-provider').value === 'openrouter') {
+            syncModels();
+        }
+    });
+
+    // Auto-sync ketika user selesai memasukkan API Key
+    document.getElementById('api-key').addEventListener('blur', () => {
+        const apiKey = document.getElementById('api-key').value;
+        if (apiKey) {
             syncModels();
         }
     });
