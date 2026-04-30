@@ -444,6 +444,10 @@ app.listen(PORT, () => {
     console.log("Server jalan di port", PORT);
 });
 
+app.get('/', (req, res) => {
+    res.send("Bot aktif 🚀");
+});
+
 startBot().catch(err => {
     logger.fatal({ err }, 'Gagal memulai bot.');
     process.exit(1);
