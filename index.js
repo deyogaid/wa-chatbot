@@ -27,29 +27,24 @@ const AIFactory   = require('./ai_factory.js');
 let TelegramBot;
 try { TelegramBot = require('node-telegram-bot-api'); } catch (_) {}
 
-// =================================================================
-// KONFIGURASI TEKNIS (bukan data bisnis)
-// =================================================================
-const TECH = {
+// Konfigurasi infrastruktur (tetap via .env)
+const CONFIG = {
     ownerPauseDuration: (parseInt(process.env.OWNER_PAUSE_MINUTES) || 5) * 60 * 1000,
     telegramBotToken:   process.env.TELEGRAM_BOT_TOKEN,
     telegramChatId:     process.env.TELEGRAM_CHAT_ID,
     n8nWebhookUrl:      process.env.N8N_WEBHOOK_URL,
-    // Model fallback chains (bisa di-override dari DB)
-    groqModels:         ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'],
-    openrouterModels:   ['meta-llama/llama-3.1-8b-instruct:free', 'google/gemma-2-9b-it:free'],
+    ownerNumbers:       (process.env.OWNER_NUMBERS || '').split(',').map(n => n.trim()).filter(Boolean),
 };
 
 const logger = pino({ transport: { target: 'pino-pretty' } });
 
 let telegramBot;
-if (TelegramBot && TECH.telegramBotToken && TECH.telegramChatId) {
-    telegramBot = new TelegramBot(TECH.telegramBotToken, { polling: false });
+if (TelegramBot && CONFIG.telegramBotToken && CONFIG.telegramChatId) {
+    telegramBot = new TelegramBot(CONFIG.telegramBotToken, { polling: false });
     logger.info('Notifikasi Telegram aktif.');
 }
 
 const userActivityCache = {};
-const OWNER_NUMBERS = (process.env.OWNER_NUMBERS || '').split(',').map(n => n.trim()).filter(Boolean);
 
 // =================================================================
 // DYNAMIC SYSTEM PROMPT (dari database, bukan hardcode)
@@ -145,9 +140,9 @@ async function summarizeConversation(history, userId = 'admin') {
 // INTEGRASI EKSTERNAL
 // =================================================================
 async function forwardPaymentToN8N(sender, caption, imageBuffer) {
-    if (!TECH.n8nWebhookUrl) return;
+    if (!CONFIG.n8nWebhookUrl) return;
     try {
-        await axios.post(TECH.n8nWebhookUrl, {
+        await axios.post(CONFIG.n8nWebhookUrl, {
             sender:       sender.split('@')[0],
             caption:      caption || 'Tidak ada caption',
             image_base64: imageBuffer.toString('base64'),
@@ -162,18 +157,18 @@ async function sendTelegramNotification(text, imageBuffer = null) {
     if (!telegramBot) return;
     try {
         if (imageBuffer) {
-            await telegramBot.sendPhoto(TECH.telegramChatId, imageBuffer, { caption: text, parse_mode: 'Markdown' });
+            await telegramBot.sendPhoto(CONFIG.telegramChatId, imageBuffer, { caption: text, parse_mode: 'Markdown' });
         } else {
-            await telegramBot.sendMessage(TECH.telegramChatId, text, { parse_mode: 'Markdown' });
+            await telegramBot.sendMessage(CONFIG.telegramChatId, text, { parse_mode: 'Markdown' });
         }
     } catch (e) {
         logger.error('[Telegram] Gagal kirim:', e.message);
     }
 }
 
-async function sendMenuWithButtons(sock, jid, greeting, quoted = {}) {
+async function sendMenuWithButtons(sock, jid, greeting, options = {}) {
     // Gunakan teks biasa karena button WA sudah deprecated di banyak versi
-    await sendMessageWTyping(sock, jid, { text: greeting }, { quoted });
+    await sendMessageWTyping(sock, jid, { text: greeting }, options);
 }
 
 // =================================================================
@@ -200,8 +195,8 @@ const handleMessagesUpsert = (sock) => async ({ messages }) => {
         const text = getMessageContent(msg).trim().toLowerCase();
         if (text === '/pause') {
             const jid = msg.key.remoteJid;
-            userActivityCache[jid] = Date.now() + TECH.ownerPauseDuration;
-            logger.info(`[PAUSE] Bot di-pause untuk ${jid} selama ${TECH.ownerPauseDuration / 60000} menit.`);
+            userActivityCache[jid] = Date.now() + CONFIG.ownerPauseDuration;
+            logger.info(`[PAUSE] Bot di-pause untuk ${jid} selama ${CONFIG.ownerPauseDuration / 60000} menit.`);
         }
         return;
     }
@@ -357,7 +352,7 @@ async function startBot() {
 
         if (isOwner && presences[myId]?.lastKnownPresence === 'composing') {
             if (!userActivityCache[id] || Date.now() > userActivityCache[id]) {
-                userActivityCache[id] = Date.now() + TECH.ownerPauseDuration;
+                userActivityCache[id] = Date.now() + CONFIG.ownerPauseDuration;
                 logger.info(`[PAUSE] Owner mengetik ke ${id}. Bot pause.`);
 
                 const hist = await db.getHistoryForJid(id);

@@ -1,9 +1,11 @@
+require('dotenv').config();
 const express = require('express');
 const path = require('path');
+const axios = require('axios');
 const db = require('./database');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.DASHBOARD_PORT || process.env.PORT || 3000;
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -20,6 +22,10 @@ const mockAuth = (req, res, next) => {
 app.get('/api/ai-config', mockAuth, async (req, res) => {
     try {
         const config = await db.getAIConfig(req.user.id);
+        // Pastikan frontend bisa membaca properti 'model' atau 'model_name'
+        if (config && config.model_name) {
+            config.model = config.model_name;
+        }
         res.json({ success: true, config });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -28,6 +34,10 @@ app.get('/api/ai-config', mockAuth, async (req, res) => {
 
 app.post('/api/ai-config', mockAuth, async (req, res) => {
     try {
+        // Sinkronisasi jika frontend mengirim 'model' alih-alih 'model_name'
+        if (req.body.model && !req.body.model_name) {
+            req.body.model_name = req.body.model;
+        }
         await db.updateAIConfig(req.user.id, req.body);
         res.json({ success: true, message: 'Configuration saved successfully' });
     } catch (err) {
@@ -112,10 +122,17 @@ app.delete('/api/faqs/:id', mockAuth, async (req, res) => {
 });
 
 // --- FETCH MODELS ENDPOINT ---
-const axios = require('axios');
 app.post('/api/models', mockAuth, async (req, res) => {
-    const { provider, api_key } = req.body;
+    let { provider, api_key } = req.body;
     
+    // Fallback: Jika api_key kosong dari request, coba ambil dari database
+    if (!api_key) {
+        const config = await db.getAIConfig(req.user.id);
+        if (config && config.api_key) {
+            api_key = config.api_key;
+        }
+    }
+
     if (!api_key && provider !== 'openrouter') {
         return res.json({ success: false, error: 'API Key diperlukan untuk mengambil daftar model.' });
     }

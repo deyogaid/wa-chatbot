@@ -18,16 +18,17 @@ class AIFactory {
         const systemPrompt = config.system_prompt || "Anda adalah CS virtual.";
 
         try {
-            if (provider === 'gemini') {
-                return await this.callGemini(apiKey, modelName, systemPrompt, userText, history, customerName);
-            } else if (provider === 'groq') {
-                return await this.callOpenAICompatible(apiKey, "https://api.groq.com/openai/v1", modelName, systemPrompt, userText, history, customerName);
-            } else if (provider === 'openrouter') {
-                return await this.callOpenAICompatible(apiKey, "https://openrouter.ai/api/v1", modelName, systemPrompt, userText, history, customerName);
-            } else if (provider === 'openai') {
-                return await this.callOpenAICompatible(apiKey, null, modelName, systemPrompt, userText, history, customerName);
-            } else {
-                return "Provider AI tidak didukung.";
+            switch (provider) {
+                case 'gemini':
+                    return await this.callGemini(apiKey, modelName, systemPrompt, userText, history, customerName);
+                case 'groq':
+                    return await this.callOpenAICompatible(apiKey, "https://api.groq.com/openai/v1", modelName, systemPrompt, userText, history, customerName);
+                case 'openrouter':
+                    return await this.callOpenAICompatible(apiKey, "https://openrouter.ai/api/v1", modelName, systemPrompt, userText, history, customerName);
+                case 'openai':
+                    return await this.callOpenAICompatible(apiKey, null, modelName, systemPrompt, userText, history, customerName);
+                default:
+                    throw new Error('Provider tidak didukung');
             }
         } catch (error) {
             console.error(`[AI Factory Error] Provider: ${provider}`, error.message);
