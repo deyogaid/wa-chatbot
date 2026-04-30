@@ -4,6 +4,13 @@
 // =================================================================
 
 // 1. IMPORTS & DEPENDENCIES
+const express = require('express');
+const app = express();
+
+app.use(express.json());
+
+let currentSock = null;
+
 require('dotenv').config();
 const {
     default: makeWASocket,
@@ -370,6 +377,7 @@ async function startBot() {
         generateHighQualityLinkPreview: false,
         logger:  pino({ level: 'silent' }),
     });
+currentSock = sock;
 
     sock.ev.on('creds.update',       saveCreds);
     sock.ev.on('connection.update',  handleConnectionUpdate(sock));
@@ -404,6 +412,41 @@ async function startBot() {
         }
     });
 }
+app.post('/connect', async (req, res) => {
+    try {
+        const { phone } = req.body;
+
+        if (!phone) {
+            return res.json({ error: "Nomor tidak boleh kosong" });
+        }
+
+        if (!currentSock) {
+            return res.json({ error: "Bot belum siap" });
+        }
+
+        const code = await currentSock.requestPairingCode(phone);
+
+        res.json({
+            success: true,
+            pairing_code: code
+        });
+
+    } catch (err) {
+        res.json({
+            error: err.message
+        });
+    }
+});
+
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log("Server jalan di port", PORT);
+});
+
+app.get('/', (req, res) => {
+    res.send("Bot aktif 🚀");
+});
 
 startBot().catch(err => {
     logger.fatal({ err }, 'Gagal memulai bot.');
