@@ -145,6 +145,32 @@
                             </button>
                         </form>
                     </div>
+
+                    <!-- GAS Configuration -->
+                    <div class="card" style="margin-top: 20px;">
+                        <div class="card-header">
+                            <h2>📊 Integrasi Google Sheets (GAS)</h2>
+                            <p>Tarik daftar harga secara otomatis dari Google Sheets ke chatbot Anda.</p>
+                        </div>
+                        <div class="card-body">
+                            <form id="gas-form">
+                                <div class="form-group">
+                                    <label>Google Apps Script (GAS) Web App URL</label>
+                                    <input type="url" id="gas-url" placeholder="https://script.google.com/macros/s/AKfycby.../exec">
+                                    <small class="help-text">Deploy kode GAS sebagai Web App, dan tempelkan URL eksekusinya di sini.</small>
+                                </div>
+                                <div class="form-actions" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                                    <button type="button" class="btn btn-secondary" id="btn-test-gas">
+                                        <i data-lucide="plug"></i> Test Connection
+                                    </button>
+                                    <button type="button" class="btn btn-primary" id="btn-sync-gas">
+                                        <i data-lucide="download-cloud"></i> Sync Products Now
+                                    </button>
+                                </div>
+                                <div id="gas-status" style="margin-top: 15px; font-size: 0.9rem; font-weight: 500;"></div>
+                            </form>
+                        </div>
+                    </div>
                 </section>
 
                 <!-- Pricelist Tab -->
@@ -219,7 +245,7 @@
     <div id="product-modal" class="modal">
         <div class="modal-content">
             <div class="modal-header">
-                <h3 id="modal-title">Tambah Produk</h3>
+                <h3 iAd="modal-title">Tambah Produk</h3>
                 <button class="close-modal"><i data-lucide="x"></i></button>
             </div>
             <form id="product-form">
@@ -277,7 +303,7 @@
     <!-- Toast Notification -->
     <div id="toast" class="toast">Notifikasi</div>
 
-    <script src="script.js?v=3"></script>
+    <script src="script.js?v=4"></script>
     <script>
         lucide.createIcons();
     </script>
