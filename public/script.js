@@ -69,6 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 document.getElementById('company-social').value = data.config.company_social || '';
                 document.getElementById('company-maps').value = data.config.company_maps || '';
                 document.getElementById('business-context').value = data.config.business_context || '';
+                document.getElementById('gas-url').value = data.config.gas_url || '';
 
                 // Update brand headline
                 if (data.config.business_name) {
@@ -81,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- SAVE AI CONFIG ---
-    document.getElementById('config-form').addEventListener('submit', async (e) => {
+    document.getElementById('ai-config-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const config = {
             business_name: document.getElementById('business-name').value,
@@ -93,7 +94,8 @@ document.addEventListener('DOMContentLoaded', () => {
             company_address: document.getElementById('company-address').value,
             company_social: document.getElementById('company-social').value,
             company_maps: document.getElementById('company-maps').value,
-            business_context: document.getElementById('business-context').value
+            business_context: document.getElementById('business-context').value,
+            gas_url: document.getElementById('gas-url').value
         };
 
         const btn = document.getElementById('btn-save-config');
@@ -110,7 +112,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (data.success) {
                 showToast('Konfigurasi AI berhasil disimpan!');
-                document.getElementById('brand-headline').textContent = config.business_name;
+                document.getElementById('brand-name').textContent = config.business_name;
             } else {
                 showToast(data.error || 'Gagal menyimpan konfigurasi', true);
             }
@@ -127,6 +129,75 @@ document.addEventListener('DOMContentLoaded', () => {
         e.preventDefault();
         // Memicu submit config-form karena datanya disimpan bersamaan di ai_configs
         document.getElementById('btn-save-config').click();
+    });
+
+    // --- GAS LOGIC ---
+    document.getElementById('btn-test-gas').addEventListener('click', async () => {
+        const gasUrl = document.getElementById('gas-url').value;
+        if (!gasUrl) return showToast('Harap isi URL GAS terlebih dahulu', true);
+        
+        const btn = document.getElementById('btn-test-gas');
+        const statusDiv = document.getElementById('gas-status');
+        btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Testing...';
+        btn.disabled = true;
+        
+        try {
+            const response = await fetch('/api/gas/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ gas_url: gasUrl })
+            });
+            const data = await response.json();
+            if (data.success) {
+                statusDiv.innerHTML = `<span style="color: green;">✅ ${data.message}</span>`;
+                showToast('Koneksi GAS Berhasil!');
+            } else {
+                statusDiv.innerHTML = `<span style="color: red;">❌ ${data.error}</span>`;
+                showToast('Koneksi GAS Gagal', true);
+            }
+        } catch (err) {
+            statusDiv.innerHTML = `<span style="color: red;">❌ Terjadi kesalahan jaringan.</span>`;
+        } finally {
+            btn.innerHTML = '<i data-lucide="plug"></i> Test Connection';
+            btn.disabled = false;
+            lucide.createIcons();
+        }
+    });
+
+    document.getElementById('btn-sync-gas').addEventListener('click', async () => {
+        const gasUrl = document.getElementById('gas-url').value;
+        if (!gasUrl) return showToast('Harap isi URL GAS terlebih dahulu', true);
+
+        // Simpan konfigurasi dulu agar gas_url di database terupdate
+        document.getElementById('btn-save-config').click();
+
+        const btn = document.getElementById('btn-sync-gas');
+        const statusDiv = document.getElementById('gas-status');
+        btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Syncing...';
+        btn.disabled = true;
+        
+        try {
+            // Tunggu sedikit agar proses save sebelumnya (yang async) bisa selesai
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            const response = await fetch('/api/gas/sync-products', { method: 'POST' });
+            const data = await response.json();
+            
+            if (data.success) {
+                statusDiv.innerHTML = `<span style="color: green;">✅ Sync berhasil: ${data.synced} produk disinkronkan, ${data.errors} gagal.</span>`;
+                showToast(`Sync berhasil! (${data.synced} produk)`);
+                loadProducts(); // Muat ulang tabel pricelist
+            } else {
+                statusDiv.innerHTML = `<span style="color: red;">❌ Gagal: ${data.error}</span>`;
+                showToast('Gagal sinkronisasi produk', true);
+            }
+        } catch (err) {
+            statusDiv.innerHTML = `<span style="color: red;">❌ Terjadi kesalahan jaringan atau timeout.</span>`;
+        } finally {
+            btn.innerHTML = '<i data-lucide="download-cloud"></i> Sync Products Now';
+            btn.disabled = false;
+            lucide.createIcons();
+        }
     });
 
     // --- SYNC MODELS ---
