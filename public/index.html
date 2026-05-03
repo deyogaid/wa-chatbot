@@ -1,0 +1,598 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CSWA Dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdn.tailwindcss.com"></script>
+<script>
+tailwind.config = {
+  theme: {
+    extend: {
+      fontFamily: {
+        display: ['Syne', 'sans-serif'],
+        body: ['DM Sans', 'sans-serif'],
+        mono: ['DM Mono', 'monospace'],
+      },
+      colors: {
+        wa: '#25D366',
+        'wa-dark': '#128C7E',
+        'wa-light': '#DCF8C6',
+        ink: '#0d1117',
+        'ink-2': '#161b22',
+        'ink-3': '#21262d',
+        muted: '#8b949e',
+        border: '#30363d',
+      }
+    }
+  }
+}
+</script>
+<style>
+  * { font-family: 'DM Sans', sans-serif; box-sizing: border-box; }
+  h1,h2,h3,.font-display { font-family: 'Syne', sans-serif; }
+  body { background: #0d1117; color: #e6edf3; margin: 0; }
+
+  .sidebar { background: #0d1117; border-right: 1px solid #21262d; }
+  .nav-item { display:flex; align-items:center; gap:10px; padding:10px 16px; border-radius:8px; cursor:pointer; transition:all .2s; color:#8b949e; font-size:14px; font-weight:500; }
+  .nav-item:hover { background:#161b22; color:#e6edf3; }
+  .nav-item.active { background:#161b22; color:#25D366; }
+  .nav-item svg { width:18px; height:18px; flex-shrink:0; }
+
+  .card { background:#161b22; border:1px solid #21262d; border-radius:12px; padding:20px; }
+  .card-sm { background:#161b22; border:1px solid #21262d; border-radius:10px; padding:16px; }
+
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
+
+  .badge-connected { background:#0d2818; color:#3fb950; border:1px solid #1a4731; }
+  .badge-connecting { background:#2d1f00; color:#d29922; border:1px solid #5a3e00; }
+  .badge-disconnected { background:#2d0f0f; color:#f85149; border:1px solid #5a1e1e; }
+
+  .pulse-green { animation: pulse-g 2s infinite; }
+  @keyframes pulse-g { 0%,100%{opacity:1} 50%{opacity:.4} }
+
+  input, textarea, select {
+    background:#0d1117; border:1px solid #30363d; color:#e6edf3;
+    border-radius:8px; padding:10px 14px; width:100%; font-size:14px;
+    font-family:'DM Sans',sans-serif; transition:border .2s; outline:none;
+  }
+  input:focus, textarea:focus, select:focus { border-color:#25D366; }
+  select option { background:#0d1117; }
+
+  .btn { display:inline-flex; align-items:center; gap:8px; padding:9px 18px; border-radius:8px; font-size:14px; font-weight:600; cursor:pointer; border:none; transition:all .15s; font-family:'DM Sans',sans-serif; }
+  .btn-primary { background:#25D366; color:#0d1117; }
+  .btn-primary:hover { background:#1fb558; }
+  .btn-primary:disabled { background:#1a3d28; color:#3d7a52; cursor:not-allowed; }
+  .btn-ghost { background:transparent; color:#8b949e; border:1px solid #30363d; }
+  .btn-ghost:hover { background:#21262d; color:#e6edf3; }
+  .btn-danger { background:transparent; color:#f85149; border:1px solid #3d1515; }
+  .btn-danger:hover { background:#2d0f0f; }
+  .btn-sm { padding:6px 12px; font-size:13px; }
+
+  .modal-overlay { position:fixed; inset:0; background:rgba(0,0,0,.7); z-index:50; display:none; align-items:center; justify-content:center; padding:16px; }
+  .modal-overlay.open { display:flex; }
+  .modal { background:#161b22; border:1px solid #30363d; border-radius:16px; width:100%; max-width:480px; max-height:90vh; overflow-y:auto; }
+  .modal-header { padding:20px 24px 0; display:flex; justify-content:space-between; align-items:center; }
+  .modal-body { padding:20px 24px 24px; }
+
+  .table-row { display:grid; padding:12px 16px; border-bottom:1px solid #21262d; align-items:center; gap:12px; font-size:14px; }
+  .table-row:last-child { border-bottom:none; }
+  .table-header { color:#8b949e; font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:.05em; }
+
+  .alert-item { display:flex; gap:12px; padding:12px 16px; border-bottom:1px solid #21262d; }
+  .alert-item:last-child { border-bottom:none; }
+
+  .qr-box { background:#fff; border-radius:12px; padding:12px; display:inline-block; }
+
+  /* scrollbar */
+  ::-webkit-scrollbar { width:4px; height:4px; }
+  ::-webkit-scrollbar-track { background:transparent; }
+  ::-webkit-scrollbar-thumb { background:#30363d; border-radius:4px; }
+
+  /* mobile bottom nav */
+  .bottom-nav { display:none; position:fixed; bottom:0; left:0; right:0; background:#0d1117; border-top:1px solid #21262d; padding:8px 0; z-index:40; }
+  .bottom-nav-item { display:flex; flex-direction:column; align-items:center; gap:3px; padding:6px 12px; cursor:pointer; color:#8b949e; font-size:10px; font-weight:500; flex:1; transition:color .2s; }
+  .bottom-nav-item.active { color:#25D366; }
+  .bottom-nav-item svg { width:20px; height:20px; }
+
+  @media(max-width:768px) {
+    .sidebar { display:none; }
+    .bottom-nav { display:flex; }
+    .main-content { padding-bottom:80px; }
+  }
+
+  .toast { position:fixed; bottom:90px; left:50%; transform:translateX(-50%); background:#25D366; color:#0d1117; padding:10px 20px; border-radius:100px; font-size:13px; font-weight:600; z-index:100; opacity:0; transition:opacity .3s; pointer-events:none; white-space:nowrap; }
+  .toast.show { opacity:1; }
+  .toast.error { background:#f85149; color:#fff; }
+
+  .label { font-size:13px; font-weight:500; color:#8b949e; margin-bottom:6px; display:block; }
+  .form-group { margin-bottom:16px; }
+
+  .stat-card { background:#161b22; border:1px solid #21262d; border-radius:12px; padding:20px; }
+  .stat-num { font-family:'Syne',sans-serif; font-size:28px; font-weight:700; }
+
+  .loading { display:inline-block; width:16px; height:16px; border:2px solid #30363d; border-top-color:#25D366; border-radius:50%; animation:spin .6s linear infinite; }
+  @keyframes spin { to{transform:rotate(360deg)} }
+
+  .fade-in { animation:fadeIn .3s ease; }
+  @keyframes fadeIn { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
+</style>
+</head>
+<body>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<!-- Layout -->
+<div style="display:flex; min-height:100vh;">
+
+  <!-- Sidebar -->
+  <aside class="sidebar" style="width:220px; position:fixed; top:0; left:0; height:100vh; padding:20px 12px; display:flex; flex-direction:column; z-index:30;">
+    <div style="padding:0 4px 24px;">
+      <div class="font-display" style="font-size:18px; font-weight:800; color:#25D366;">CSWA</div>
+      <div style="font-size:11px; color:#8b949e; margin-top:2px;">WhatsApp CS Bot</div>
+    </div>
+    <nav style="display:flex; flex-direction:column; gap:4px; flex:1;">
+      <div class="nav-item active" onclick="switchTab('dashboard')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        Dashboard
+      </div>
+      <div class="nav-item" onclick="switchTab('config')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        Konfigurasi AI
+      </div>
+      <div class="nav-item" onclick="switchTab('products')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+        Produk
+      </div>
+      <div class="nav-item" onclick="switchTab('faqs')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        FAQ & Balasan
+      </div>
+    </nav>
+    <div style="padding-top:16px; border-top:1px solid #21262d;">
+      <div style="font-size:11px; color:#8b949e; text-align:center;">v1.0 · Termux Compatible</div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content" style="margin-left:220px; flex:1; padding:24px; min-height:100vh;">
+
+    <!-- ======================== DASHBOARD ======================== -->
+    <div id="tab-dashboard" class="tab-panel active fade-in">
+      <div style="display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; flex-wrap:wrap; gap:12px;">
+        <div>
+          <h1 class="font-display" style="font-size:22px; font-weight:800; margin:0;">Dashboard</h1>
+          <p style="color:#8b949e; font-size:14px; margin:4px 0 0;">Status sistem & koneksi WhatsApp</p>
+        </div>
+        <button class="btn btn-ghost btn-sm" onclick="loadDashboard()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+          Refresh
+        </button>
+      </div>
+
+      <!-- Status Cards -->
+      <div style="display:grid; grid-template-columns:repeat(auto-fit,minmax(160px,1fr)); gap:16px; margin-bottom:24px;">
+        <div class="stat-card">
+          <div style="font-size:12px; color:#8b949e; margin-bottom:8px; text-transform:uppercase; letter-spacing:.05em;">Status Bot</div>
+          <div class="stat-num" id="stat-status">—</div>
+          <div style="font-size:12px; color:#8b949e; margin-top:4px;" id="stat-since">—</div>
+        </div>
+        <div class="stat-card" style="cursor:pointer;" onclick="switchTab('products')">
+          <div style="font-size:12px; color:#8b949e; margin-bottom:8px; text-transform:uppercase; letter-spacing:.05em;">Produk</div>
+          <div class="stat-num" id="stat-products">—</div>
+          <div style="font-size:12px; color:#8b949e; margin-top:4px;">item terdaftar</div>
+        </div>
+        <div class="stat-card" style="cursor:pointer;" onclick="switchTab('faqs')">
+          <div style="font-size:12px; color:#8b949e; margin-bottom:8px; text-transform:uppercase; letter-spacing:.05em;">FAQ</div>
+          <div class="stat-num" id="stat-faqs">—</div>
+          <div style="font-size:12px; color:#8b949e; margin-top:4px;">balasan cepat</div>
+        </div>
+        <div class="stat-card">
+          <div style="font-size:12px; color:#8b949e; margin-bottom:8px; text-transform:uppercase; letter-spacing:.05em;">Notifikasi</div>
+          <div class="stat-num" id="stat-alerts">—</div>
+          <div style="font-size:12px; color:#8b949e; margin-top:4px;">belum dibaca</div>
+        </div>
+      </div>
+
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:16px; margin-bottom:24px;">
+        <!-- WA Connection Card -->
+        <div class="card" style="grid-column:1/-1;">
+          <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px; flex-wrap:wrap; gap:8px;">
+            <div>
+              <div class="font-display" style="font-size:16px; font-weight:700;">Koneksi WhatsApp</div>
+              <div style="font-size:13px; color:#8b949e; margin-top:2px;" id="wa-phone-display">Nomor tidak diketahui</div>
+            </div>
+            <span id="wa-badge" class="badge-disconnected" style="padding:4px 12px; border-radius:100px; font-size:12px; font-weight:600;">● Disconnected</span>
+          </div>
+
+          <!-- Connected state -->
+          <div id="wa-connected" style="display:none;">
+            <div style="background:#0d2818; border:1px solid #1a4731; border-radius:10px; padding:16px; display:flex; align-items:center; gap:12px;">
+              <div style="width:10px; height:10px; background:#3fb950; border-radius:50;" class="pulse-green"></div>
+              <div>
+                <div style="font-size:14px; font-weight:600; color:#3fb950;">Bot aktif dan siap menerima pesan</div>
+                <div style="font-size:12px; color:#8b949e; margin-top:2px;">Pesan WhatsApp akan dijawab otomatis oleh AI</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Disconnected state -->
+          <div id="wa-disconnected">
+            <div style="margin-bottom:16px;">
+              <p style="font-size:14px; color:#8b949e; margin:0 0 12px;">Hubungkan WhatsApp dengan <strong style="color:#e6edf3;">Pairing Code</strong> (tanpa scan QR):</p>
+              <div style="display:flex; gap:8px;">
+                <input id="phone-input" type="tel" placeholder="Nomor WA: 628123456789" style="flex:1;">
+                <button class="btn btn-primary" onclick="requestPairingCode()">
+                  <span id="pair-btn-text">Dapatkan Kode</span>
+                  <span id="pair-btn-loading" style="display:none;" class="loading"></span>
+                </button>
+              </div>
+              <div style="font-size:12px; color:#8b949e; margin-top:8px;">Format: 628xxx (tanpa + atau spasi). Pastikan <code style="color:#25D366;">node index.js</code> sudah berjalan di Termux.</div>
+            </div>
+            <div id="pairing-result" style="display:none;">
+              <div style="background:#0d1117; border:1px solid #25D366; border-radius:10px; padding:16px; text-align:center;">
+                <div style="font-size:12px; color:#8b949e; margin-bottom:8px;">Masukkan kode ini di WhatsApp → Perangkat Tertaut → Tautkan Perangkat</div>
+                <div id="pairing-code" class="font-mono" style="font-size:28px; font-weight:600; color:#25D366; letter-spacing:6px;">—</div>
+                <div style="font-size:11px; color:#8b949e; margin-top:8px;">Kode berlaku beberapa menit</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Connecting state -->
+          <div id="wa-connecting" style="display:none;">
+            <div style="background:#2d1f00; border:1px solid #5a3e00; border-radius:10px; padding:16px; display:flex; align-items:center; gap:12px;">
+              <div class="loading"></div>
+              <div style="font-size:14px; color:#d29922;">Menghubungkan ke WhatsApp...</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alerts -->
+      <div class="card">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <div class="font-display" style="font-size:16px; font-weight:700;">Notifikasi Sistem</div>
+          <button class="btn btn-ghost btn-sm" onclick="markAlertsRead()" id="mark-read-btn" style="display:none;">Tandai dibaca</button>
+        </div>
+        <div id="alerts-list">
+          <div style="text-align:center; padding:32px; color:#8b949e; font-size:14px;">Memuat notifikasi...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ======================== AI CONFIG ======================== -->
+    <div id="tab-config" class="tab-panel fade-in">
+      <div style="margin-bottom:24px;">
+        <h1 class="font-display" style="font-size:22px; font-weight:800; margin:0;">Konfigurasi AI</h1>
+        <p style="color:#8b949e; font-size:14px; margin:4px 0 0;">Pengaturan provider AI dan profil bisnis</p>
+      </div>
+
+      <form onsubmit="saveConfig(event)" style="display:grid; gap:16px; max-width:760px;">
+        
+        <!-- Provider -->
+        <div class="card">
+          <div class="font-display" style="font-size:15px; font-weight:700; margin-bottom:16px;">Provider & Model AI</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div class="form-group">
+              <label class="label">Provider</label>
+              <select id="cfg-provider" onchange="onProviderChange()">
+                <option value="gemini">Google Gemini</option>
+                <option value="openai">OpenAI</option>
+                <option value="groq">Groq (Gratis)</option>
+                <option value="openrouter">OpenRouter</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label class="label">API Key</label>
+              <input id="cfg-api-key" type="password" placeholder="sk-... / AIza...">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="label">Model</label>
+            <div style="display:flex; gap:8px;">
+              <select id="cfg-model" style="flex:1;">
+                <option value="">— Pilih model —</option>
+              </select>
+              <button type="button" class="btn btn-ghost btn-sm" onclick="fetchModels()" id="fetch-models-btn">
+                <span id="fetch-models-text">Ambil Model</span>
+                <span id="fetch-models-loading" style="display:none;" class="loading"></span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Profil Bisnis -->
+        <div class="card">
+          <div class="font-display" style="font-size:15px; font-weight:700; margin-bottom:16px;">Profil Bisnis</div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+            <div class="form-group">
+              <label class="label">Nama Bisnis</label>
+              <input id="cfg-business-name" type="text" placeholder="Toko Keren Saya">
+            </div>
+            <div class="form-group">
+              <label class="label">Email</label>
+              <input id="cfg-company-email" type="email" placeholder="toko@email.com">
+            </div>
+            <div class="form-group" style="grid-column:1/-1;">
+              <label class="label">Alamat</label>
+              <input id="cfg-company-address" type="text" placeholder="Jl. Merdeka No. 1, Jakarta">
+            </div>
+            <div class="form-group">
+              <label class="label">Sosial Media</label>
+              <input id="cfg-company-social" type="text" placeholder="@tokosaya">
+            </div>
+            <div class="form-group">
+              <label class="label">Google Maps URL</label>
+              <input id="cfg-company-maps" type="text" placeholder="https://maps.google.com/...">
+            </div>
+          </div>
+          <div class="form-group">
+            <label class="label">Konteks Bisnis Tambahan</label>
+            <textarea id="cfg-business-context" rows="3" placeholder="Jam operasional, kebijakan retur, info khusus lainnya..."></textarea>
+          </div>
+        </div>
+
+        <!-- System Prompt -->
+        <div class="card">
+          <div class="font-display" style="font-size:15px; font-weight:700; margin-bottom:4px;">System Prompt</div>
+          <div style="font-size:13px; color:#8b949e; margin-bottom:12px;">Instruksi dasar kepribadian bot. Produk & harga ditambahkan otomatis dari daftar produk.</div>
+          <textarea id="cfg-system-prompt" rows="5" placeholder="Anda adalah asisten virtual Customer Service yang ramah dan profesional..."></textarea>
+        </div>
+
+        <div style="display:flex; gap:8px;">
+          <button type="submit" class="btn btn-primary">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"/></svg>
+            Simpan Konfigurasi
+          </        </aside>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <header class="topbar">
+                <h1>Dashboard UMKM</h1>
+                <div class="user-profile" style="display: flex; align-items: center; gap: 20px;">
+                    <!-- Notification Bell -->
+                    <div class="notification-wrapper" id="notification-bell" style="position: relative; cursor: pointer;">
+                        <i data-lucide="bell" style="color: var(--text-muted); width: 24px; height: 24px;"></i>
+                        <span id="notification-badge" class="badge-danger" style="display: none;">0</span>
+                        
+                        <!-- Dropdown panel -->
+                        <div id="notification-dropdown" class="dropdown-panel" style="display: none;">
+                            <div class="dropdown-header">
+                                <h4>Status & Kendala Bot</h4>
+                                <button id="btn-read-alerts" class="btn btn-sm btn-secondary" style="font-size: 0.75rem; padding: 4px 8px;">Tandai Dibaca</button>
+                            </div>
+                            <div class="dropdown-body" id="notification-list">
+                                <div class="empty-state">Semua sistem normal.</div>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <span class="user-badge">Admin</span>
+                </div>
+            </header>
+
+            <div class="content-area">
+                <!-- AI Settings Tab -->
+                <section id="ai-settings" class="tab-pane active">
+                    <div class="card">
+                        <div class="card-header">
+                            <h3>🤖 Konfigurasi AI (Bring Your Own Key)</h3>
+                            <p>Atur provider LLM dan sistem prompt bot Anda.</p>
+                        </div>
+                        <div class="card-body">
+                            <form id="ai-config-form">
+                                <div class="form-group">
+                                    <label>Nama Bisnis</label>
+                                    <input type="text" id="business-name" placeholder="Contoh: Kartini Digital Printing" required>
+                                </div>
+                                <div class="form-group">
+                                    <label>Penyedia AI (Provider)</label>
+                                    <select id="ai-provider">
+                                        <option value="groq">Groq (Cepat & Gratis)</option>
+                                        <option value="gemini">Google Gemini</option>
+                                        <option value="openai">OpenAI (ChatGPT)</option>
+                                        <option value="openrouter">OpenRouter</option>
+                                    </select>
+                                </div>
+                                <div class="form-group">
+                                    <label>API Key</label>
+                                    <input type="password" id="api-key" placeholder="Masukkan API Key Anda..." required>
+                                    <small class="help-text">Dapatkan API Key gratis di: <a href="https://console.groq.com/keys" target="_blank">Groq Console</a> atau <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label class="flex-between">
+                                        <span>Model AI</span>
+                                        <button type="button" id="btn-sync-models" class="btn btn-secondary btn-sm" style="padding: 2px 8px; font-size: 0.8rem;">
+                                            <i data-lucide="refresh-cw" style="width:12px; height:12px;"></i> Sinkronisasi
+                                        </button>
+                                    </label>
+                                    <select id="model-name">
+                                        <option value="llama-3.3-70b-versatile">llama-3.3-70b-versatile</option>
+                                    </select>
+                                    <small id="model-help-text" class="help-text">Pilih provider dan isi API Key, lalu klik Sinkronisasi untuk melihat daftar model.</small>
+                                </div>
+                                <div class="form-group">
+                                    <label>System Prompt (Instruksi Dasar Bot)</label>
+                                    <textarea id="system-prompt" rows="5" placeholder="Instruksi untuk CS Bot..." required></textarea>
+                                </div>
+                                <button type="submit" class="btn btn-primary" id="btn-save-config">
+                                    <i data-lucide="save"></i> Simpan Konfigurasi
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+
+                    <div class="card" style="margin-top: 20px;">
+                        <div class="card-header">
+                            <h2>Profil Perusahaan & Konteks AI</h2>
+                            <p>Data ini akan digunakan AI untuk menjawab pertanyaan spesifik seputar bisnis Anda.</p>
+                        </div>
+                        <form id="profile-form">
+                            <div class="form-group">
+                                <label>Email Bisnis</label>
+                                <input type="email" id="company-email" placeholder="Contoh: cs@bisnissaya.com">
+                            </div>
+                            <div class="form-group">
+                                <label>Alamat Lengkap Toko/Kantor</label>
+                                <textarea id="company-address" rows="2" placeholder="Contoh: Jl. Sudirman No. 123, Jakarta"></textarea>
+                            </div>
+                            <div class="form-group">
+                                <label>Sosial Media (IG/Tiktok dll)</label>
+                                <input type="text" id="company-social" placeholder="Contoh: IG: @bisnissaya | Tiktok: @bisnissaya">
+                            </div>
+                            <div class="form-group">
+                                <label>Link Google Maps</label>
+                                <input type="text" id="company-maps" placeholder="Contoh: https://maps.app.goo.gl/xxx">
+                            </div>
+                            <div class="form-group">
+                                <label>Konteks/Aturan Bisnis Ekstra (Opsional)</label>
+                                <textarea id="business-context" rows="3" placeholder="Contoh: Kami tidak menerima desain yang mengandung unsur SARA. Pengerjaan express tambah biaya 20%"></textarea>
+                                <small class="help-text">Informasi tambahan agar AI semakin pintar mengenali aturan spesifik bisnis Anda.</small>
+                            </div>
+                            <button type="submit" class="btn btn-primary" id="btn-save-profile">
+                                <i data-lucide="save"></i> Simpan Profil
+                            </button>
+                        </form>
+                    </div>
+                </section>
+
+                <!-- Pricelist Tab -->
+                <section id="pricelist" class="tab-pane">
+                    <div class="card">
+                        <div class="card-header flex-between">
+                            <div>
+                                <h3>📋 Kelola Daftar Harga</h3>
+                                <p>Data ini akan dibaca oleh AI saat membalas pelanggan.</p>
+                            </div>
+                            <button id="btn-add-product" class="btn btn-primary">
+                                <i data-lucide="plus"></i> Tambah Produk
+                            </button>
+                        </div>
+                        <div class="card-body">
+                            <div class="table-responsive">
+                                <table class="table">
+                                    <thead>
+                                        <tr>
+                                            <th>Kategori</th>
+                                            <th>Nama Produk</th>
+                                            <th>Harga (Rp)</th>
+                                            <th>Keterangan</th>
+                                            <th>Aksi</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="product-list">
+                                        <!-- Products injected here -->
+                                        <tr>
+                                            <td colspan="5" class="text-center">Memuat data...</td>
+                                        </tr>
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+
+                <!-- KELOLA FAQ -->
+                <section id="kelola-faq" class="tab-pane">
+                    <div class="card">
+                        <div class="card-header flex-between">
+                            <div>
+                                <h2>Balasan Cepat (FAQ)</h2>
+                                <p>Jika pelanggan mengetik kata kunci ini persis, bot akan membalas langsung tanpa menggunakan kuota AI.</p>
+                            </div>
+                            <button class="btn btn-primary" onclick="showFaqModal()">
+                                <i data-lucide="plus"></i> Tambah FAQ
+                            </button>
+                        </div>
+                        <div class="table-responsive">
+                            <table class="data-table">
+                                <thead>
+                                    <tr>
+                                        <th>Kata Kunci / Command</th>
+                                        <th>Balasan Statis</th>
+                                        <th style="width: 100px;">Aksi</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="faq-list">
+                                    <tr><td colspan="3" style="text-align: center;">Memuat data...</td></tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </section>
+            </div>
+        </main>
+    </div>
+
+    <!-- Product Modal -->
+    <div id="product-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modal-title">Tambah Produk</h3>
+                <button class="close-modal"><i data-lucide="x"></i></button>
+            </div>
+            <form id="product-form">
+                <input type="hidden" id="product-id">
+                <div class="form-group">
+                    <label>Kategori</label>
+                    <input type="text" id="product-category" required placeholder="Contoh: Banner & Media Besar">
+                </div>
+                <div class="form-group">
+                    <label>Nama Produk</label>
+                    <input type="text" id="product-name" required placeholder="Contoh: Banner Flexi Cina">
+                </div>
+                <div class="form-group">
+                    <label>Harga (Rp)</label>
+                    <input type="number" id="product-price" required placeholder="Contoh: 30000">
+                </div>
+                <div class="form-group">
+                    <label>Keterangan (Opsional)</label>
+                    <input type="text" id="product-desc" placeholder="Contoh: per Meter">
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary close-modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Modal FAQ -->
+    <div id="faq-modal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="faq-modal-title">Tambah Balasan Cepat</h3>
+                <button class="close-modal" onclick="closeFaqModal()">&times;</button>
+            </div>
+            <form id="faq-form">
+                <input type="hidden" id="faq-id">
+                <div class="form-group">
+                    <label>Kata Kunci / Command</label>
+                    <input type="text" id="faq-command" placeholder="Contoh: /layanan atau alamat" required>
+                    <small class="help-text">Jika pelanggan mengetik persis teks ini, bot akan membalas otomatis.</small>
+                </div>
+                <div class="form-group">
+                    <label>Balasan Statis</label>
+                    <textarea id="faq-response" rows="5" placeholder="Contoh: Layanan kami meliputi..." required></textarea>
+                </div>
+                <div class="form-actions" style="margin-top: 20px; display: flex; justify-content: flex-end; gap: 10px;">
+                    <button type="button" class="btn btn-secondary" onclick="closeFaqModal()">Batal</button>
+                    <button type="submit" class="btn btn-primary">Simpan</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">Notifikasi</div>
+
+    <script src="script.js"></script>
+    <script>
+        lucide.createIcons();
+    </script>
+</body>
+</html>
