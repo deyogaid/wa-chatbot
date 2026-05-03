@@ -4,6 +4,9 @@ const db = require('./database');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const BOT_PORT = process.env.BOT_PORT || 3001;
+const BOT_URL  = `http://localhost:${BOT_PORT}`;
+
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -173,6 +176,38 @@ app.post('/api/alerts/read', mockAuth, async (req, res) => {
         res.status(500).json({ success: false, error: err.message });
     }
 });
+
+// =================================================================
+// TAMBAHKAN INI ke server.js
+// Letakkan SEBELUM baris: db.initializeDatabase();
+// =================================================================
+
+// Proxy: status bot
+app.get('/api/bot-status', async (req, res) => {
+    try {
+        const r = await axios.get(`${BOT_URL}/status`, { timeout: 2000 });
+        res.json(r.data);
+    } catch {
+        res.json({ success: true, status: 'disconnected', qr: null, phone: null });
+    }
+});
+
+// Proxy: minta pairing code
+app.post('/api/bot-connect', async (req, res) => {
+    try {
+        const r = await axios.post(`${BOT_URL}/connect`, req.body, { timeout: 10000 });
+        res.json(r.data);
+    } catch (err) {
+        res.json({ success: false, error: 'Bot tidak merespons. Jalankan: node index.js' });
+    }
+});
+
+// =================================================================
+// Pastikan 'axios' sudah di-require di atas file server.js
+// (sudah ada di baris: const axios = require('axios'); di dalam /api/models)
+// Pindahkan saja ke bagian atas bersama require lainnya.
+// =================================================================
+
 
 // Initialize DB and start server
 db.initializeDatabase();
