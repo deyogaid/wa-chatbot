@@ -50,6 +50,12 @@ if (TelegramBot && TECH.telegramBotToken && TECH.telegramChatId) {
 
 const userActivityCache = {};
 const OWNER_NUMBERS = (process.env.OWNER_NUMBERS || '').split(',').map(n => n.trim()).filter(Boolean);
+let botStatus = {
+    status: 'disconnected', // 'connecting' | 'connected' | 'disconnected'
+    qr: null,
+    phone: null,
+    since: null,
+};
 
 // =================================================================
 // DYNAMIC SYSTEM PROMPT (dari database, bukan hardcode)
@@ -180,13 +186,24 @@ async function sendMenuWithButtons(sock, jid, greeting, quoted = {}) {
 // EVENT HANDLERS
 // =================================================================
 const handleConnectionUpdate = (sock) => ({ connection, lastDisconnect, qr }) => {
-    if (qr) qrcode.generate(qr, { small: true });
+    if (qr) {
+        botStatus.qr = qr;
+        botStatus.status = 'connecting';
+        qrcode.generate(qr, { small: true });
+    }
     if (connection === 'close') {
+        botStatus.status = 'disconnected';
+        botStatus.qr = null;
+        botStatus.phone = null;
         const reconnect = new Boom(lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
         logger.warn(`[WA] Koneksi terputus. Reconnect: ${reconnect}`);
         if (reconnect) setTimeout(startBot, 5000);
         else logger.fatal('[WA] Sesi tidak valid. Hapus auth_info_baileys/ dan scan ulang.');
     } else if (connection === 'open') {
+        botStatus.status = 'connected';
+        botStatus.qr = null;
+        botStatus.since = new Date().toISOString();
+        botStatus.phone = sock.user?.id?.split(':')[0] || null;
         logger.info('[WA] ✅ Bot tersambung dan siap!');
     }
 };
@@ -398,19 +415,23 @@ startBot().then(sock => {
     process.exit(1);
 });
 
+app.get('/status', (req, res) => {
+    res.json({ success: true, ...botStatus });
+});
+
 app.post('/connect', async (req, res) => {
     try {
         const { phone } = req.body;
-        if (!phone)        return res.json({ error: 'Nomor tidak boleh kosong' });
-        if (!currentSock)  return res.json({ error: 'Bot belum siap' });
+        if (!phone)       return res.json({ success: false, error: 'Nomor tidak boleh kosong' });
+        if (!currentSock) return res.json({ success: false, error: 'Bot belum siap' });
         const code = await currentSock.requestPairingCode(phone);
         res.json({ success: true, pairing_code: code });
     } catch (err) {
-        res.json({ error: err.message });
+        res.json({ success: false, error: err.message });
     }
 });
 
-app.get('/', (req, res) => res.send('✅ Bot aktif'));
+app.get('/', (req, res) => res.json({ status: 'ok', bot: botStatus.status }));
 
 const BOT_PORT = process.env.BOT_PORT || 3001;
 app.listen(BOT_PORT, () => logger.info(`[BOT] Server berjalan di port ${BOT_PORT}`));
