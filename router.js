@@ -4,6 +4,7 @@ const { handleSystemCommands } = require('./roles/systemRole.js');
 const { handleFAQ } = require('./roles/faqRole.js');
 const { handlePayment } = require('./roles/paymentRole.js');
 const { handleAI } = require('./roles/aiRole.js');
+const workspaceService = require('./services/workspaceService.js');
 const pino = require('pino');
 const logger = pino({ transport: { target: 'pino-pretty' } });
 
@@ -53,6 +54,10 @@ const handleIncomingMessage = async (sock, msg, userActivityCache, CONFIG) => {
         if (!text) return;
         const command = text.toLowerCase();
         logger.info(`[MSG] ${sender.split('@')[0]}: ${text.substring(0, 80)}`);
+
+        // Log ke Google Sheet via GAS (non-blocking)
+        const dateStr = new Date().toLocaleString('id-ID', { timeZone: 'Asia/Jakarta' });
+        workspaceService.saveToSheet([dateStr, sender.split('@')[0], text], userId).catch(() => {});
 
         // 2. System Commands (/menu, /simpan-nama, isNew) -> SystemRole
         const isSystemHandled = await handleSystemCommands(sock, msg, text, command, sender, customerName, isNew, userId);
