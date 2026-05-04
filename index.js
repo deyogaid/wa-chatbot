@@ -402,36 +402,112 @@ async function startBot() {
     return sock;
 }
 
-// Express untuk endpoint pairing code (opsional)
-const express = require('express');
-const app = express();
-app.use(express.json());
+// =================================================================
+// DASHBOARD API — gabung ke satu proses, port 3000
+// =================================================================
+const path = require('path');
+const db   = require('./database.js');
 
-let currentSock = null;
-startBot().then(sock => {
-    currentSock = sock;
-}).catch(err => {
-    logger.fatal('[FATAL]', err);
-    process.exit(1);
+app.use(express.static(path.join(__dirname, 'public')));
+
+const mockAuth = (req, res, next) => { req.user = { id: 'admin' }; next(); };
+
+// Bot status (untuk dashboard)
+app.get('/api/bot-status', (req, res) => {
+  res.json({ success: true, ...botStatus });
 });
 
-app.get('/status', (req, res) => {
-    res.json({ success: true, ...botStatus });
+// Pairing code (sudah ada, biarkan)
+// app.post('/connect', ...) sudah ada di atas
+
+// AI Config
+app.get('/api/ai-config', mockAuth, async (req, res) => {
+  try { res.json({ success: true, config: await db.getAIConfig(req.user.id) }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.post('/api/ai-config', mockAuth, async (req, res) => {
+  try { await db.updateAIConfig(req.user.id, req.body); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
 });
 
-app.post('/connect', async (req, res) => {
-    try {
-        const { phone } = req.body;
-        if (!phone)       return res.json({ success: false, error: 'Nomor tidak boleh kosong' });
-        if (!currentSock) return res.json({ success: false, error: 'Bot belum siap' });
-        const code = await currentSock.requestPairingCode(phone);
-        res.json({ success: true, pairing_code: code });
-    } catch (err) {
-        res.json({ success: false, error: err.message });
+// Products
+app.get('/api/products', mockAuth, async (req, res) => {
+  try { res.json({ success: true, products: await db.getProducts(req.user.id) }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.post('/api/products', mockAuth, async (req, res) => {
+  try { const r = await db.addProduct(req.user.id, req.body); res.json({ success: true, id: r.id }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.put('/api/products/:id', mockAuth, async (req, res) => {
+  try { await db.updateProduct(req.params.id, req.user.id, req.body); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.delete('/api/products/:id', mockAuth, async (req, res) => {
+  try { await db.deleteProduct(req.params.id, req.user.id); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// FAQs
+app.get('/api/faqs', mockAuth, async (req, res) => {
+  try { res.json({ success: true, faqs: await db.getFaqs(req.user.id) }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.post('/api/faqs', mockAuth, async (req, res) => {
+  try { const r = await db.addFaq(req.user.id, req.body); res.json({ success: true, id: r.id }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.put('/api/faqs/:id', mockAuth, async (req, res) => {
+  try { await db.updateFaq(req.params.id, req.user.id, req.body); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.delete('/api/faqs/:id', mockAuth, async (req, res) => {
+  try { await db.deleteFaq(req.params.id, req.user.id); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// Alerts
+app.get('/api/alerts', mockAuth, async (req, res) => {
+  try {
+    const alerts = await db.getSystemAlerts(req.user.id);
+    res.json({ success: true, alerts, unreadCount: alerts.filter(a => a.is_read === 0).length });
+  } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.post('/api/alerts/read', mockAuth, async (req, res) => {
+  try { await db.markAlertsAsRead(req.user.id); res.json({ success: true }); }
+  catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// Models (fetch dari provider)
+app.post('/api/models', mockAuth, async (req, res) => {
+  const { provider, api_key } = req.body;
+  try {
+    let models = [];
+    if (provider === 'groq') {
+      const r = await axios.get('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${api_key}` } });
+      models = r.data.data.map(m => m.id);
+    } else if (provider === 'openai') {
+      const r = await axios.get('https://api.openai.com/v1/models', { headers: { Authorization: `Bearer ${api_key}` } });
+      models = r.data.data.map(m => m.id).filter(id => id.includes('gpt'));
+    } else if (provider === 'openrouter') {
+      const r = await axios.get('https://openrouter.ai/api/v1/models');
+      models = r.data.data.map(m => m.id);
+    } else if (provider === 'gemini') {
+      const r = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${api_key}`);
+      models = r.data.models.map(m => m.name.replace('models/', '')).filter(n => n.includes('gemini'));
     }
+    models.sort();
+    res.json({ success: true, models });
+  } catch (err) {
+    res.status(500).json({ success: false, error: 'Gagal mengambil model. Periksa API Key.' });
+  }
 });
 
-app.get('/', (req, res) => res.json({ status: 'ok', bot: botStatus.status }));
-
-const BOT_PORT = process.env.BOT_PORT || 3000;
-app.listen(BOT_PORT, () => logger.info(`[BOT] Server berjalan di port ${BOT_PORT}`));
+// =================================================================
+// START — satu port untuk semua
+// =================================================================
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  logger.info(`[SERVER] Dashboard: http://localhost:${PORT}`);
+  logger.info(`[SERVER] Bot WA aktif di proses yang sama`);
+});
