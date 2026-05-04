@@ -433,5 +433,5 @@ app.post('/connect', async (req, res) => {
 
 app.get('/', (req, res) => res.json({ status: 'ok', bot: botStatus.status }));
 
-const BOT_PORT = process.env.BOT_PORT || 3001;
+const BOT_PORT = process.env.BOT_PORT || 3000;
 app.listen(BOT_PORT, () => logger.info(`[BOT] Server berjalan di port ${BOT_PORT}`));
