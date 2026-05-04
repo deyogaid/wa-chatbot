@@ -22,6 +22,9 @@ const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios       = require('axios');
 const db          = require('./database.js');
 const AIFactory   = require('./ai_factory.js');
+const express = require('express');
+const app     = express();
+app.use(express.json());
 
 // Telegram bot opsional
 let TelegramBot;
@@ -405,9 +408,6 @@ async function startBot() {
 // =================================================================
 // DASHBOARD API — gabung ke satu proses, port 3000
 // =================================================================
-const path = require('path');
-const db   = require('./database.js');
-
 app.use(express.static(path.join(__dirname, 'public')));
 
 const mockAuth = (req, res, next) => { req.user = { id: 'admin' }; next(); };
