@@ -2,6 +2,7 @@ const axios = require('axios');
 const db = require('../database.js');
 const { sendMessageWTyping, getMessageContent } = require('./utils.js');
 const { getAIReply } = require('./aiRole.js');
+const workspaceService = require('../services/workspaceService.js');
 const { downloadMediaMessage } = require('@whiskeysockets/baileys');
 const pino = require('pino');
 const logger = pino({ transport: { target: 'pino-pretty' } });
@@ -58,12 +59,17 @@ const handlePayment = async (sock, msg, sender, customerName, userId = 'admin') 
         if (isBayar) {
             const txt = `Terima kasih${customerName ? ` Kak ${customerName}` : ''}, bukti pembayaran diterima! Tim kami akan segera verifikasi.`;
             await sendMessageWTyping(sock, sender, { text: txt }, { quoted: msg });
+            
+            const fileName = `Bukti_TF_${sender.split('@')[0]}_${Date.now()}.jpg`;
+            const base64Data = imageBuffer.toString('base64');
+
             await Promise.all([
                 forwardPaymentToN8N(sender, caption, imageBuffer),
                 sendTelegramNotification(
                     `*💰 Bukti Pembayaran Masuk*\nDari: \`${sender.split('@')[0]}\`\nNama: ${customerName || 'N/A'}\nKet: ${caption || '-'}`,
                     imageBuffer
                 ),
+                workspaceService.uploadToDrive(fileName, "image/jpeg", base64Data, userId)
             ]);
             return true;
         } else {
