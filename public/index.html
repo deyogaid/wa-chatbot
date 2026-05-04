@@ -631,6 +631,62 @@ async function loadCounts(){
   $('s-faqs').textContent=fq.faqs?.length??'—';
 }
 
+// Parse alert message multi-baris jadi object terstruktur
+function parseAlert(raw){
+  const o={provider:null,model:null,waktu:null,status:null,tindakan:null,error:null};
+  (raw||'').split('\n').forEach(l=>{
+    const i=l.indexOf(':'); if(i<0) return;
+    const k=l.slice(0,i).trim().toLowerCase();
+    const v=l.slice(i+1).trim();
+    if(k==='provider') o.provider=v;
+    else if(k==='model')    o.model=v;
+    else if(k==='waktu')    o.waktu=v;
+    else if(k==='status')   o.status=v;
+    else if(k==='tindakan') o.tindakan=v;
+    else if(k==='error')    o.error=v;
+  });
+  return o;
+}
+
+function renderAlertCard(a){
+  const isNew=a.is_read===0;
+  const p=parseAlert(a.message||'');
+  const isStructured=!!(p.provider||p.status||p.tindakan);
+  const ts=a.timestamp?new Date(a.timestamp).toLocaleString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+
+  if(isStructured){
+    // Tentukan warna berdasar isi status
+    const st=p.status||'';
+    const isErr=st.includes('401')||st.includes('402')||st.includes('403');
+    const isWarn=st.includes('429')||st.includes('503')||st.includes('500');
+    const borderC=isErr?'var(--red)':isWarn?'var(--yellow)':'var(--muted)';
+    const bgC=isErr?'rgba(248,81,73,.06)':isWarn?'rgba(210,153,34,.06)':'rgba(88,166,255,.06)';
+
+    return `<div style="border-left:3px solid ${borderC};background:${bgC};margin:10px 12px;border-radius:0 8px 8px 0;padding:12px 14px;${isNew?'':'opacity:.65'}">
+      <div class="flex items-center justify-between" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">
+        <div class="flex items-center gap-8" style="flex-wrap:wrap">
+          ${p.provider?`<span style="background:var(--bg3);border-radius:5px;padding:2px 8px;font-size:11px;font-weight:600;color:var(--text)">${esc(p.provider)}</span>`:''}
+          ${p.model?`<span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--blue);background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:2px 8px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block">${esc(p.model)}</span>`:''}
+          ${isNew?'<span style="background:var(--red);color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:100px">BARU</span>':''}
+        </div>
+        <span class="text-xs text-muted">${ts}</span>
+      </div>
+      ${p.status?`<div style="font-size:13px;font-weight:600;color:${borderC};margin-bottom:6px">${esc(p.status)}</div>`:''}
+      ${p.error?`<div style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;margin-bottom:8px;word-break:break-all">${esc(p.error)}</div>`:''}
+      ${p.tindakan?`<div style="font-size:12px;color:var(--green);display:flex;gap:6px;align-items:flex-start"><span style="flex-shrink:0">→</span><span>${esc(p.tindakan)}</span></div>`:''}
+    </div>`;
+  }
+
+  // Alert lama / format plain
+  return `<div class="flex items-start gap-8" style="padding:12px 16px;border-bottom:1px solid var(--bg3);${isNew?'':'opacity:.65'}">
+    <div style="width:7px;height:7px;border-radius:50%;background:var(--muted);margin-top:5px;flex-shrink:0"></div>
+    <div class="flex-1">
+      <div style="font-size:13px;${isNew?'font-weight:600':'color:var(--muted)'};white-space:pre-wrap">${esc(a.message||'—')}</div>
+      <div class="text-xs text-muted mt-4">${ts}</div>
+    </div>
+  </div>`;
+}
+
 async function loadAlerts(){
   const d=await api('/api/alerts',{},3000);
   const body=$('alerts-body');
@@ -640,15 +696,7 @@ async function loadAlerts(){
   if(!d.alerts?.length){
     body.innerHTML='<div class="dempty">Tidak ada notifikasi</div>'; return;
   }
-  const clr={info:'var(--blue)',warn:'var(--yellow)',error:'var(--red)',success:'var(--green)'};
-  body.innerHTML=d.alerts.map(a=>`
-    <div class="flex items-start gap-8" style="padding:12px 16px;border-bottom:1px solid var(--bg3)">
-      <div style="width:7px;height:7px;border-radius:50%;background:${clr[a.level]||'var(--muted)'};margin-top:5px;flex-shrink:0"></div>
-      <div class="flex-1">
-        <div style="font-size:13px;${a.is_read===0?'font-weight:600':'color:var(--muted)'}">${esc(a.message||'—')}</div>
-        <div class="text-xs text-muted mt-4">${a.timestamp?new Date(a.timestamp).toLocaleString('id-ID'):''}</div>
-      </div>
-    </div>`).join('');
+  body.innerHTML=d.alerts.map(a=>renderAlertCard(a)).join('');
 }
 
 async function markRead(){
