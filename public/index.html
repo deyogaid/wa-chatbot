@@ -226,6 +226,378 @@ body{font-family:'DM Sans',sans-serif;background:#0d1117;color:#e6edf3;min-heigh
 .toast.show{opacity:1}
 .toast.ok{background:#0d2818;color:var(--green);border-color:#1a4731}
 .toast.err{background:#2d0f0f;color:var(--red);border-color:#5a1e1e}
+.toast.info{background:#0c2236;color:var(--blue);border-color:#1a4b6d}
+@media(min-width:768px){.toast{bottom:24px}}
+
+/* Layout helpers */
+.flex{display:flex}.flex-col{flex-direction:column}
+.items-center{align-items:center}.items-start{align-items:flex-start}
+.justify-between{justify-content:space-between}.justify-end{justify-content:flex-end}
+.flex-1{flex:1;min-width:0}.gap-6{gap:6px}.gap-8{gap:8px}.gap-12{gap:12px}
+.mt-4{margin-top:4px}.mt-8{margin-top:8px}.mt-12{margin-top:12px}.mt-16{margin-top:16px}
+.mb-12{margin-bottom:12px}.mb-16{margin-bottom:16px}
+.truncate{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fw6{font-weight:600}.text-sm{font-size:13px}.text-xs{font-size:11px}
+.text-muted{color:var(--muted)}.text-green{color:var(--green)}.text-blue{color:var(--blue)}
+.w-full{width:100%}
+
+/* Profile preview */
+#pp-preview{width:80px;height:80px;border-radius:50%;background:var(--bg3);overflow:hidden;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+#pp-preview img{width:100%;height:100%;object-fit:cover;display:none}
+#pp-business-info div{margin-bottom:4px}
+
+/* Sync area */
+#sync-btns{margin-bottom:12px}
+</style>
+</head>
+<body>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<div class="flex" style="min-height:100vh">
+
+  <!-- ===================== SIDEBAR ===================== -->
+  <aside class="sidebar">
+    <div class="sb-logo">
+      <h1>CSWA</h1>
+      <p>WhatsApp CS Bot</p>
+    </div>
+    <nav class="sb-nav">
+      <button class="nav-btn active" data-tab="dashboard" onclick="nav('dashboard')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        Dashboard
+      </button>
+      <button class="nav-btn" data-tab="config" onclick="nav('config')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        Konfigurasi AI
+      </button>
+      <button class="nav-btn" data-tab="products" onclick="nav('products')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+        Produk
+      </button>
+      <button class="nav-btn" data-tab="faqs" onclick="nav('faqs')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        FAQ & Balasan
+      </button>
+      <button class="nav-btn" data-tab="profile" onclick="nav('profile')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Profil Bot
+      </button>
+    </nav>
+    <div class="sb-foot">v1.0 · Termux Compatible</div>
+  </aside>
+
+  <!-- ===================== MAIN ===================== -->
+  <main class="main-wrap flex-1">
+
+    <!-- =========== DASHBOARD =========== -->
+    <div id="tab-dashboard" class="tab-panel active">
+      <div class="page-hdr">
+        <div class="page-hdr-row">
+          <div><h2>Dashboard</h2><p>Status sistem &amp; koneksi WhatsApp</p></div>
+          <button class="btn btn-ghost btn-sm" onclick="loadDashboard()">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Stat cards -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-lbl">Status Bot</div>
+          <div class="stat-num" id="s-status" style="font-size:22px">—</div>
+          <div class="stat-sub" id="s-since">—</div>
+        </div>
+        <div class="stat-card" style="cursor:pointer" onclick="nav('products')">
+          <div class="stat-lbl">Produk</div>
+          <div class="stat-num" id="s-products">—</div>
+          <div class="stat-sub">item aktif</div>
+        </div>
+        <div class="stat-card" style="cursor:pointer" onclick="nav('faqs')">
+          <div class="stat-lbl">FAQ</div>
+          <div class="stat-num" id="s-faqs">—</div>
+          <div class="stat-sub">balasan cepat</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-lbl">Notifikasi</div>
+          <div class="stat-num" id="s-alerts">0</div>
+          <div class="stat-sub">belum dibaca</div>
+        </div>
+      </div>
+
+      <!-- WA Connection -->
+      <div class="card cp-lg mb-16">
+        <div class="flex items-center justify-between mb-12" style="flex-wrap:wrap;gap:8px">
+          <div>
+            <div style="font-family:'Syne',sans-serif;font-size:15px;font-weight:700">Koneksi WhatsApp</div>
+            <div class="text-sm text-muted mt-4" id="wa-phone">Belum terhubung</div>
+          </div>
+          <span id="wa-badge" class="badge badge-red"><span class="dot"></span>Disconnected</span>
+        </div>
+
+        <!-- State: connected -->
+        <div id="wa-conn" style="display:none">
+          <div class="alert-box ab-green">
+            <span class="dot pulse" style="background:var(--green)"></span>
+            <div>
+              <div class="fw6">Bot aktif dan siap menerima pesan</div>
+              <div class="text-xs mt-4" style="opacity:.8">Pesan WhatsApp dijawab otomatis oleh AI</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- State: connecting -->
+        <div id="wa-cing" style="display:none">
+          <div class="alert-box ab-yellow">
+            <span class="spinner"></span>
+            <div class="fw6">Menghubungkan ke WhatsApp...</div>
+          </div>
+        </div>
+
+        <!-- State: disconnected -->
+        <div id="wa-disc">
+          <div class="fgrp">
+            <label class="flbl">Hubungkan via Pairing Code</label>
+            <div class="flex gap-8">
+              <input id="phone-inp" class="finput flex-1" type="tel" inputmode="numeric" placeholder="628123456789">
+              <button class="btn btn-primary" id="pair-btn" onclick="getPairingCode()">
+                <span id="pair-txt">Kode</span>
+                <span id="pair-ld" style="display:none" class="spinner" style="border-top-color:#0d1117"></span>
+              </button>
+            </div>
+            <div class="fhint">Format: 628xxx · Pastikan <span class="code-chip">node index.js</span> berjalan di Termux</div>
+          </div>
+          <div id="pair-result" style="display:none">
+            <div class="pair-code" id="pair-code">——</div>
+            <div class="text-xs text-muted mt-8" style="text-align:center">WhatsApp → Perangkat Tertaut → Tautkan dengan Nomor Telepon</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alerts -->
+      <div class="card">
+        <div class="flex items-center justify-between cp" style="border-bottom:1px solid var(--bg3)">
+          <div style="font-family:'Syne',sans-serif;font-size:15px;font-weight:700">Notifikasi</div>
+          <button class="btn btn-ghost btn-sm" id="read-btn" onclick="markRead()" style="display:none">Tandai dibaca</button>
+        </div>
+        <div id="alerts-body"><div class="dempty">Memuat...</div></div>
+      </div>
+    </div>
+
+    <!-- =========== AI CONFIG =========== -->
+    <div id="tab-config" class="tab-panel">
+      <div class="page-hdr">
+        <h2>Konfigurasi AI</h2>
+        <p>Provider, model, dan profil bisnis</p>
+      </div>
+
+      <div class="card cp-lg mb-16">
+        <div style="font-family:'Syne',sans-serif;font-size:15px;font-weight:700;margin-bottom:14px">Provider &amp; Model</div>
+        <div class="frow col2">
+          <div class="fgrp">
+            <label class="flbl">Provider</label>
+            <select id="c-prov" class="fselect" onchange="onProviderChange()">
+              <option value="gemini">Google Gemini</option>
+              <option value="openai">OpenAI</option>
+              <option value="groq">Groq (Gratis)</option>
+              <option value="openrouter">OpenRouter</option>
+            </select>
+          </div>
+          <div class="fgrp">
+            <lab  flex:1;min-width:0;
+  padding:16px 16px calc(var(--bnav-h) + 20px);
+}
+.bottom-nav{
+  position:fixed;bottom:0;left:0;right:0;height:var(--bnav-h);
+  background:var(--bg);border-top:1px solid var(--bg3);
+  display:flex;z-index:100;
+}
+@media(min-width:768px){
+  .sidebar{display:flex}
+  .main-wrap{margin-left:var(--sidebar-w);padding:24px}
+  .bottom-nav{display:none}
+}
+
+/* =========================================================
+   SIDEBAR
+========================================================= */
+.sb-logo{padding:0 4px 24px}
+.sb-logo h1{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--wa)}
+.sb-logo p{font-size:11px;color:var(--muted);margin-top:2px}
+.sb-nav{display:flex;flex-direction:column;gap:2px;flex:1}
+.sb-foot{padding-top:16px;border-top:1px solid var(--bg3);font-size:11px;color:var(--muted);text-align:center}
+
+/* =========================================================
+   NAV BUTTONS (sidebar + bottom)
+========================================================= */
+.nav-btn{
+  display:flex;align-items:center;gap:10px;width:100%;padding:10px 14px;
+  background:none;border:none;border-radius:8px;cursor:pointer;
+  color:var(--muted);font-size:14px;font-family:'DM Sans',sans-serif;font-weight:500;
+  text-align:left;transition:background .15s,color .15s;
+}
+.nav-btn:hover{background:var(--bg2);color:var(--text)}
+.nav-btn.active{background:var(--bg2);color:var(--wa)}
+.nav-btn svg{width:18px;height:18px;flex-shrink:0}
+
+.bnav-btn{
+  flex:1;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;
+  background:none;border:none;cursor:pointer;
+  color:var(--muted);font-size:10px;font-weight:500;font-family:'DM Sans',sans-serif;
+  transition:color .15s;
+}
+.bnav-btn svg{width:20px;height:20px}
+.bnav-btn.active{color:var(--wa)}
+
+/* =========================================================
+   TAB PANELS
+========================================================= */
+.tab-panel{display:none}
+.tab-panel.active{display:block;animation:fadeUp .22s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* =========================================================
+   PAGE HEADER
+========================================================= */
+.page-hdr{margin-bottom:20px}
+.page-hdr h2{font-family:'Syne',sans-serif;font-size:20px;font-weight:800}
+.page-hdr p{color:var(--muted);font-size:13px;margin-top:3px}
+.page-hdr-row{display:flex;justify-content:space-between;align-items:flex-start;gap:10px;flex-wrap:wrap}
+
+/* =========================================================
+   CARDS
+========================================================= */
+.card{background:var(--bg2);border:1px solid var(--bg3);border-radius:12px}
+.cp{padding:16px}
+.cp-lg{padding:20px}
+
+/* =========================================================
+   STATS GRID
+========================================================= */
+.stats-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:10px;margin-bottom:16px}
+@media(min-width:480px){.stats-grid{grid-template-columns:repeat(4,1fr)}}
+.stat-card{background:var(--bg2);border:1px solid var(--bg3);border-radius:12px;padding:14px}
+.stat-lbl{font-size:11px;color:var(--muted);text-transform:uppercase;letter-spacing:.05em;margin-bottom:8px}
+.stat-num{font-family:'Syne',sans-serif;font-size:26px;font-weight:800;line-height:1}
+.stat-sub{font-size:11px;color:var(--muted);margin-top:4px}
+
+/* =========================================================
+   BADGES
+========================================================= */
+.badge{display:inline-flex;align-items:center;gap:5px;padding:4px 10px;border-radius:100px;font-size:12px;font-weight:600}
+.badge-green{background:#0d2818;color:var(--green);border:1px solid #1a4731}
+.badge-yellow{background:#2d1f00;color:var(--yellow);border:1px solid #5a3e00}
+.badge-red{background:#2d0f0f;color:var(--red);border:1px solid #5a1e1e}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex-shrink:0}
+.dot.pulse{animation:dp 1.8s infinite}
+@keyframes dp{0%,100%{opacity:1}50%{opacity:.25}}
+
+/* =========================================================
+   ALERT BOXES
+========================================================= */
+.alert-box{border-radius:10px;padding:14px 16px;display:flex;align-items:center;gap:12px;font-size:14px}
+.ab-green{background:#0d2818;border:1px solid #1a4731;color:var(--green)}
+.ab-yellow{background:#2d1f00;border:1px solid #5a3e00;color:var(--yellow)}
+
+/* =========================================================
+   BUTTONS
+========================================================= */
+.btn{
+  display:inline-flex;align-items:center;justify-content:center;gap:6px;
+  padding:9px 16px;border-radius:8px;border:none;
+  font-family:'DM Sans',sans-serif;font-size:14px;font-weight:600;
+  cursor:pointer;transition:all .15s;white-space:nowrap;
+}
+.btn:active{transform:scale(.97)}
+.btn-primary{background:var(--wa);color:#0d1117}
+.btn-primary:hover{background:var(--wa-dim)}
+.btn-primary:disabled{background:#1a3d28;color:#3d7a52;cursor:not-allowed;transform:none}
+.btn-ghost{background:transparent;color:var(--muted);border:1px solid var(--border)}
+.btn-ghost:hover{background:var(--bg3);color:var(--text)}
+.btn-danger{background:transparent;color:var(--red);border:1px solid #3d1515}
+.btn-danger:hover{background:#2d0f0f}
+.btn-sm{padding:6px 12px;font-size:13px}
+
+/* =========================================================
+   FORM
+========================================================= */
+.fgrp{margin-bottom:14px}
+.flbl{display:block;font-size:13px;font-weight:500;color:var(--muted);margin-bottom:6px}
+.finput,.fselect,.ftarea{
+  width:100%;padding:10px 14px;
+  background:var(--bg);border:1px solid var(--border);
+  color:var(--text);border-radius:8px;
+  font-family:'DM Sans',sans-serif;font-size:14px;
+  transition:border .15s;outline:none;-webkit-appearance:none;
+}
+.finput:focus,.fselect:focus,.ftarea:focus{border-color:var(--wa)}
+.finput::placeholder,.ftarea::placeholder{color:var(--border)}
+.fselect option{background:#1c2128}
+.ftarea{resize:vertical;min-height:80px}
+.fhint{font-size:12px;color:var(--muted);margin-top:5px}
+.frow{display:grid;gap:12px}
+@media(min-width:480px){.frow.col2{grid-template-columns:1fr 1fr}}
+
+/* =========================================================
+   DATA TABLE
+========================================================= */
+.dtable{border-radius:12px;overflow:hidden;border:1px solid var(--bg3)}
+.drow{
+  padding:12px 16px;border-bottom:1px solid var(--bg3);
+  display:flex;gap:8px;align-items:center;background:var(--bg2);
+}
+.drow:last-child{border-bottom:none}
+.dempty{padding:40px 16px;text-align:center;color:var(--muted);font-size:14px;background:var(--bg2)}
+
+/* =========================================================
+   MODALS — bottom sheet on mobile
+========================================================= */
+.overlay{
+  position:fixed;inset:0;background:rgba(0,0,0,.75);
+  z-index:200;display:none;
+  align-items:flex-end;justify-content:center;padding:0;
+}
+.overlay.open{display:flex}
+.msheet{
+  background:var(--bg2);border:1px solid var(--border);
+  width:100%;max-width:500px;
+  border-radius:20px 20px 0 0;
+  max-height:92vh;overflow-y:auto;
+  animation:su .22s ease;
+}
+@keyframes su{from{transform:translateY(30px);opacity:0}to{transform:translateY(0);opacity:1}}
+@media(min-width:480px){
+  .overlay{align-items:center;padding:16px}
+  .msheet{border-radius:16px;max-height:90vh}
+}
+.mhandle{width:36px;height:4px;background:var(--bg3);border-radius:2px;margin:10px auto 0}
+.mhdr{padding:14px 20px 0;display:flex;justify-content:space-between;align-items:center}
+.mtitle{font-family:'Syne',sans-serif;font-size:16px;font-weight:700}
+.mclose{background:var(--bg3);border:none;color:var(--muted);width:28px;height:28px;border-radius:50%;cursor:pointer;font-size:16px;display:flex;align-items:center;justify-content:center}
+.mbody{padding:16px 20px 28px}
+
+/* =========================================================
+   MISC
+========================================================= */
+.spinner{display:inline-block;width:16px;height:16px;border:2px solid var(--bg3);border-top-color:var(--wa);border-radius:50%;animation:spin .6s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.pair-code{font-family:'DM Mono',monospace;font-size:32px;font-weight:500;color:var(--wa);letter-spacing:8px;text-align:center;padding:16px;background:var(--bg);border:1px solid var(--wa);border-radius:10px}
+.code-chip{background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:2px 7px;font-family:'DM Mono',monospace;font-size:12px;color:var(--blue)}
+
+/* Toast */
+.toast{
+  position:fixed;bottom:calc(var(--bnav-h) + 12px);left:50%;transform:translateX(-50%);
+  background:#1c2128;color:var(--text);border:1px solid var(--border);
+  padding:10px 18px;border-radius:100px;
+  font-size:13px;font-weight:500;z-index:300;
+  opacity:0;pointer-events:none;transition:opacity .25s;
+  white-space:nowrap;max-width:calc(100vw - 32px);overflow:hidden;text-overflow:ellipsis;
+}
+.toast.show{opacity:1}
+.toast.ok{background:#0d2818;color:var(--green);border-color:#1a4731}
+.toast.err{background:#2d0f0f;color:var(--red);border-color:#5a1e1e}
 @media(min-width:768px){.toast{bottom:24px}}
 
 /* Layout helpers */
