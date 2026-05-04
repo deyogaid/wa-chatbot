@@ -1,0 +1,362 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>CSWA Dashboard</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@700;800&family=DM+Sans:wght@400;500;600&family=DM+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
+<div class="flex" style="min-height:100vh">
+
+  <!-- ===================== SIDEBAR ===================== -->
+  <aside class="sidebar">
+    <div class="sb-logo">
+      <h1>CSWA</h1>
+      <p>WhatsApp CS Bot</p>
+    </div>
+    <nav class="sb-nav">
+      <button class="nav-btn active" data-tab="dashboard" onclick="nav('dashboard')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+        Dashboard
+      </button>
+      <button class="nav-btn" data-tab="config" onclick="nav('config')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+        Konfigurasi AI
+      </button>
+      <button class="nav-btn" data-tab="products" onclick="nav('products')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+        Produk
+      </button>
+      <button class="nav-btn" data-tab="faqs" onclick="nav('faqs')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        FAQ & Balasan
+      </button>
+      <button class="nav-btn" data-tab="profile" onclick="nav('profile')">
+        <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Profil Bot
+      </button>
+    </nav>
+    <div class="sb-foot">v1.0 · Termux Compatible</div>
+  </aside>
+
+  <!-- ===================== MAIN ===================== -->
+  <main class="main-wrap flex-1">
+
+    <!-- =========== DASHBOARD =========== -->
+    <div id="tab-dashboard" class="tab-panel active">
+      <div class="page-hdr">
+        <div class="page-hdr-row">
+          <div><h2>Dashboard</h2><p>Status sistem &amp; koneksi WhatsApp</p></div>
+          <button class="btn btn-ghost btn-sm" onclick="loadDashboard()">
+            <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+            Refresh
+          </button>
+        </div>
+      </div>
+
+      <!-- Stat cards -->
+      <div class="stats-grid">
+        <div class="stat-card">
+          <div class="stat-lbl">Status Bot</div>
+          <div class="stat-num" id="s-status" style="font-size:22px">—</div>
+          <div class="stat-sub" id="s-since">—</div>
+        </div>
+        <div class="stat-card" style="cursor:pointer" onclick="nav('products')">
+          <div class="stat-lbl">Produk</div>
+          <div class="stat-num" id="s-products">—</div>
+          <div class="stat-sub">item aktif</div>
+        </div>
+        <div class="stat-card" style="cursor:pointer" onclick="nav('faqs')">
+          <div class="stat-lbl">FAQ</div>
+          <div class="stat-num" id="s-faqs">—</div>
+          <div class="stat-sub">balasan cepat</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-lbl">Notifikasi</div>
+          <div class="stat-num" id="s-alerts">0</div>
+          <div class="stat-sub">belum dibaca</div>
+        </div>
+      </div>
+
+      <!-- WA Connection -->
+      <div class="card cp-lg mb-16">
+        <div class="flex items-center justify-between mb-12" style="flex-wrap:wrap;gap:8px">
+          <div>
+            <div style="font-family:'Syne',sans-serif;font-size:15px;font-weight:700">Koneksi WhatsApp</div>
+            <div class="text-sm text-muted mt-4" id="wa-phone">Belum terhubung</div>
+          </div>
+          <span id="wa-badge" class="badge badge-red"><span class="dot"></span>Disconnected</span>
+        </div>
+
+        <!-- State: connected -->
+        <div id="wa-conn" style="display:none">
+          <div class="alert-box ab-green">
+            <span class="dot pulse" style="background:var(--green)"></span>
+            <div>
+              <div class="fw6">Bot aktif dan siap menerima pesan</div>
+              <div class="text-xs mt-4" style="opacity:.8">Pesan WhatsApp dijawab otomatis oleh AI</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- State: connecting -->
+        <div id="wa-cing" style="display:none">
+          <div class="alert-box ab-yellow">
+            <span class="spinner"></span>
+            <div class="fw6">Menghubungkan ke WhatsApp...</div>
+          </div>
+        </div>
+
+        <!-- State: disconnected -->
+        <div id="wa-disc">
+          <div class="fgrp">
+            <label class="flbl">Hubungkan via Pairing Code</label>
+            <div class="flex gap-8">
+              <input id="phone-inp" class="finput flex-1" type="tel" inputmode="numeric" placeholder="628123456789">
+              <button class="btn btn-primary" id="pair-btn" onclick="getPairingCode()">
+                <span id="pair-txt">Kode</span>
+                <span id="pair-ld" style="display:none" class="spinner" style="border-top-color:#0d1117"></span>
+              </button>
+            </div>
+            <div class="fhint">Format: 628xxx · Pastikan <span class="code-chip">node index.js</span> berjalan di Termux</div>
+          </div>
+          <div id="pair-result" style="display:none">
+            <div class="pair-code" id="pair-code">——</div>
+            <div class="text-xs text-muted mt-8" style="text-align:center">WhatsApp → Perangkat Tertaut → Tautkan dengan Nomor Telepon</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Alerts -->
+      <div class="card">
+        <div class="flex items-center justify-between cp" style="border-bottom:1px solid var(--bg3)">
+          <div style="font-family:'Syne',sans-serif;font-size:15px;font-weight:700">Notifikasi</div>
+          <button class="btn btn-ghost btn-sm" id="read-btn" onclick="markRead()" style="display:none">Tandai dibaca</button>
+        </div>
+        <div id="alerts-body"><div class="dempty">Memuat...</div></div>
+      </div>
+    </div>
+
+    <!-- =========== AI CONFIG =========== -->
+    <div id="tab-config" class="tab-panel">
+      <div class="page-hdr">
+        <h2>Konfigurasi AI</h2>
+        <p>Provider, model, dan profil bisnis</p>
+      </div>
+
+      <div class="card cp-lg mb-16">
+        <div style="font-family:'Syne',sans-serif;font-size:15px;font-weight:700;margin-bottom:14px">Provider &amp; Model</div>
+        <div class="frow col2">
+          <div class="fgrp">
+            <label class="flbl">Provider</label>
+            <select id="c-prov" class="fselect" onchange="onProviderChange()">
+              <option value="gemini">Google Gemini</option>
+              <option value="openai">OpenAI</option>
+              <option value="groq">Groq (Gratis)</option>
+              <option value="openrouter">OpenRouter</option>
+            </select>
+          </div>
+          <div class="fgrp">
+            <label class="flbl">API Key</label>
+            <input id="c-key" class="finput" type="password" placeholder="sk-... / AIza...">
+          </div>
+        </div>
+        <div class="fgrp">
+          <label class="flbl">Model</label>
+          <div class="flex gap-8">
+            <select id="c-model" class="fselect flex-1"><option value="">— pilih model —</option></select>
+            <button class="btn btn-ghost btn-sm" id="fetch-btn" onclick="fetchModels()">
+              <span id="fetch-txt">Ambil</span>
+              <span id="fetch-ld" style="display:none" class="spinner"></span>
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="card cp-lg mb-16">
+        <div style="font-family:'Syne',sans-serif;font-size:15px;font-weight:700;margin-bottom:14px">Profil Bisnis</div>
+        <div class="frow col2">
+          <div class="fgrp"><label class="flbl">Nama Bisnis</label><input id="c-name" class="finput" placeholder="Toko Saya"></div>
+          <div class="fgrp"><label class="flbl">Email</label><input id="c-email" class="finput" type="email" placeholder="toko@email.com"></div>
+        </div>
+        <div class="fgrp"><label class="flbl">Alamat</label><input id="c-addr" class="finput" placeholder="Jl. Merdeka No.1"></div>
+        <div class="frow col2">
+          <div class="fgrp"><label class="flbl">Sosial Media</label><input id="c-social" class="finput" placeholder="@tokosaya"></div>
+          <div class="fgrp"><label class="flbl">Google Maps</label><input id="c-maps" class="finput" placeholder="https://maps.google.com/..."></div>
+        </div>
+        <div class="fgrp"><label class="flbl">Konteks Tambahan</label><textarea id="c-ctx" class="ftarea" placeholder="Jam buka, kebijakan, info khusus..."></textarea></div>
+      </div>
+
+      <div class="card cp-lg mb-16">
+        <div style="font-family:'Syne',sans-serif;font-size:15px;font-weight:700;margin-bottom:4px">System Prompt</div>
+        <div class="fhint mb-12">Kepribadian bot. Daftar harga ditambah otomatis dari tab Produk.</div>
+        <textarea id="c-prompt" class="ftarea" style="min-height:100px" placeholder="Anda adalah asisten CS yang ramah dan profesional..."></textarea>
+      </div>
+
+      <div class="flex gap-8">
+        <button class="btn btn-primary" onclick="saveConfig()">
+          <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+          Simpan
+        </button>
+        <button class="btn btn-ghost" onclick="loadConfig()">Reset</button>
+      </div>
+    </div>
+
+    <!-- =========== PRODUCTS =========== -->
+    <div id="tab-products" class="tab-panel">
+      <div class="page-hdr">
+        <div class="page-hdr-row">
+          <div><h2>Produk</h2><p>Daftar harga yang digunakan AI</p></div>
+          <button class="btn btn-primary btn-sm" onclick="openModal('p')">+ Tambah</button>
+        </div>
+      </div>
+      <!-- Sync button area (visible if biz) -->
+      <div class="flex gap-8 mb-12" id="sync-btns" style="display:none">
+        <button class="btn btn-primary btn-sm" onclick="syncToWACatalog()">
+          <svg width="14" height="14" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M7 16V4m0 0L3 8m4-4l4 4m6 0v12m0 0l4-4m-4 4l-4-4"/></svg>
+          Sync ke WA Catalog
+        </button>
+        <span id="sync-last" class="text-xs text-muted flex items-center"></span>
+      </div>
+      <div class="dtable" id="products-tbl"><div class="dempty">Memuat...</div></div>
+    </div>
+
+    <!-- =========== FAQs =========== -->
+    <div id="tab-faqs" class="tab-panel">
+      <div class="page-hdr">
+        <div class="page-hdr-row">
+          <div><h2>FAQ &amp; Balasan Cepat</h2><p>Cocok exact → balas otomatis tanpa AI</p></div>
+          <button class="btn btn-primary btn-sm" onclick="openModal('f')">+ Tambah</button>
+        </div>
+      </div>
+      <div class="dtable" id="faqs-tbl"><div class="dempty">Memuat...</div></div>
+    </div>
+
+    <!-- =========== PROFILE =========== -->
+    <div id="tab-profile" class="tab-panel">
+      <div class="page-hdr">
+        <h2>Profil Bot</h2>
+        <p>Foto profil & status WhatsApp</p>
+      </div>
+
+      <!-- Info Profil Saat Ini -->
+      <div class="card cp-lg mb-16">
+        <div class="flex items-center gap-12" style="flex-wrap:wrap">
+          <div id="pp-preview">
+            <img id="pp-img" src="" alt="Foto Profil" onerror="this.style.display='none'">
+          </div>
+          <div>
+            <div style="font-family:'Syne',sans-serif;font-size:18px;font-weight:700" id="pp-name">—</div>
+            <div class="text-sm text-muted mt-4">+<span id="pp-phone">—</span></div>
+            <div class="badge badge-green mt-8" id="pp-biz-badge" style="display:none">WA Business</div>
+          </div>
+        </div>
+        <div class="mt-12" id="pp-business-info" style="display:none"></div>
+      </div>
+
+      <!-- Form Update -->
+      <div class="card cp-lg mb-16">
+        <div style="font-family:'Syne',sans-serif;font-size:15px;font-weight:700;margin-bottom:14px">Perbarui Profil</div>
+        <div class="fgrp">
+          <label class="flbl">Foto Profil (opsional)</label>
+          <input type="file" id="pp-file" accept="image/*" class="finput" style="padding:8px">
+          <div class="fhint">Ukuran maks 2MB, akan diresize otomatis. Kosongkan jika tidak ingin ganti.</div>
+        </div>
+        <div class="fgrp">
+          <label class="flbl">Status / Bio</label>
+          <input id="pp-status" class="finput" placeholder="Tulis status...">
+        </div>
+        <div class="flex gap-8">
+          <button class="btn btn-primary" onclick="updateProfile()">
+            <svg width="16" height="16" fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7"/></svg>
+            Simpan
+          </button>
+          <button class="btn btn-ghost" onclick="loadProfile()">Batal</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ===================== BOTTOM NAV ===================== -->
+<nav class="bottom-nav">
+  <button class="bnav-btn active" data-tab="dashboard" onclick="nav('dashboard')">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/></svg>
+    Dashboard
+  </button>
+  <button class="bnav-btn" data-tab="config" onclick="nav('config')">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065zM15 12a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+    AI Config
+  </button>
+  <button class="bnav-btn" data-tab="products" onclick="nav('products')">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4"/></svg>
+    Produk
+  </button>
+  <button class="bnav-btn" data-tab="faqs" onclick="nav('faqs')">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M8.228 9c.549-1.165 2.03-2 3.772-2 2.21 0 4 1.343 4 3 0 1.4-1.278 2.575-3.006 2.907-.542.104-.994.54-.994 1.093m0 3h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    FAQ
+  </button>
+  <button class="bnav-btn" data-tab="profile" onclick="nav('profile')">
+    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M5.121 17.804A13.937 13.937 0 0112 16c2.5 0 4.847.655 6.879 1.804M15 10a3 3 0 11-6 0 3 3 0 016 0zm6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+    Profil
+  </button>
+</nav>
+
+<!-- ===================== MODAL: PRODUCT ===================== -->
+<div class="overlay" id="modal-p" onclick="oclose(event,'modal-p')">
+  <div class="msheet">
+    <div class="mhandle"></div>
+    <div class="mhdr">
+      <div class="mtitle" id="mp-title">Tambah Produk</div>
+      <button class="mclose" onclick="closeModal('modal-p')">✕</button>
+    </div>
+    <div class="mbody">
+      <input type="hidden" id="mp-id">
+      <div class="fgrp"><label class="flbl">Nama Produk *</label><input id="mp-name" class="finput" placeholder="Nama produk / layanan"></div>
+      <div class="frow col2">
+        <div class="fgrp"><label class="flbl">Harga (Rp) *</label><input id="mp-price" class="finput" type="number" inputmode="numeric" placeholder="150000"></div>
+        <div class="fgrp"><label class="flbl">Kategori</label><input id="mp-cat" class="finput" placeholder="Makanan, Minuman..."></div>
+      </div>
+      <div class="fgrp"><label class="flbl">Keterangan</label><textarea id="mp-notes" class="ftarea" style="min-height:60px" placeholder="Deskripsi singkat, varian..."></textarea></div>
+      <div class="flex gap-8 justify-end">
+        <button class="btn btn-ghost" onclick="closeModal('modal-p')">Batal</button>
+        <button class="btn btn-primary" onclick="saveProduct()">Simpan</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ===================== MODAL: FAQ ===================== -->
+<div class="overlay" id="modal-f" onclick="oclose(event,'modal-f')">
+  <div class="msheet">
+    <div class="mhandle"></div>
+    <div class="mhdr">
+      <div class="mtitle" id="mf-title">Tambah FAQ</div>
+      <button class="mclose" onclick="closeModal('modal-f')">✕</button>
+    </div>
+    <div class="mbody">
+      <input type="hidden" id="mf-id">
+      <div class="fgrp">
+        <label class="flbl">Command / Kata Kunci *</label>
+        <input id="mf-cmd" class="finput" placeholder="harga, stok, jam buka...">
+        <div class="fhint">Jika pesan SAMA PERSIS dengan ini → balas otomatis tanpa AI</div>
+      </div>
+      <div class="fgrp"><label class="flbl">Balasan *</label><textarea id="mf-resp" class="ftarea" placeholder="Harga kami mulai dari Rp50.000..."></textarea></div>
+      <div class="flex gap-8 justify-end">
+        <button class="btn btn-ghost" onclick="closeModal('modal-f')">Batal</button>
+        <button class="btn btn-primary" onclick="saveFaq()">Simpan</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="script.js"></script>
+</body>
+  </html>
