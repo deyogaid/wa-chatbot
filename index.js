@@ -137,7 +137,7 @@ async function getAIReply(userText, history = [], customerName = null, userId = 
         return '⚙️ Sistem AI belum dikonfigurasi. Hubungi admin untuk mengatur API Key di Dashboard.';
     }
     const systemPrompt = await buildDynamicSystemPrompt(userId);
-    const fullConfig   = { ...config, system_prompt: systemPrompt };
+    const fullConfig   = { ...config, system_prompt: systemPrompt, user_id: userId };
     logger.info(`[AI] Menghubungi provider: ${fullConfig.provider}`);
     return AIFactory.generateReply(fullConfig, userText, history, customerName);
 }
