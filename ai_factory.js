@@ -89,16 +89,17 @@ class AIFactory {
         const userId     = config.user_id || 'admin'; // ← dipastikan selalu ada
 
         try {
-            if (provider === 'gemini') {
-                return await this.callGemini(apiKey, modelName, systemPrmt, userText, history, customerName);
-            } else if (provider === 'groq') {
-                return await this.callOpenAICompatible(apiKey, 'https://api.groq.com/openai/v1', provider, modelName, systemPrmt, userText, history, customerName);
-            } else if (provider === 'openrouter') {
-                return await this.callOpenAICompatible(apiKey, 'https://openrouter.ai/api/v1', provider, modelName, systemPrmt, userText, history, customerName);
-            } else if (provider === 'openai') {
-                return await this.callOpenAICompatible(apiKey, null, provider, modelName, systemPrmt, userText, history, customerName);
-            } else {
-                return 'Provider AI tidak didukung.';
+            switch (provider) {
+                case 'gemini':
+                    return await this.callGemini(apiKey, modelName, systemPrompt, userText, history, customerName);
+                case 'groq':
+                    return await this.callOpenAICompatible(apiKey, "https://api.groq.com/openai/v1", modelName, systemPrompt, userText, history, customerName);
+                case 'openrouter':
+                    return await this.callOpenAICompatible(apiKey, "https://openrouter.ai/api/v1", modelName, systemPrompt, userText, history, customerName);
+                case 'openai':
+                    return await this.callOpenAICompatible(apiKey, null, modelName, systemPrompt, userText, history, customerName);
+                default:
+                    throw new Error('Provider tidak didukung');
             }
         } catch (error) {
             // Log ke terminal
