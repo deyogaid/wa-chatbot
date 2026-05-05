@@ -1,337 +1,257 @@
 // File: database.js
+// Pure JavaScript database using @seald-io/nedb
+// Zero native compilation — works on Termux, Windows, macOS, Linux
 
-let sqlite3;
-try {
-    sqlite3 = require('sqlite3').verbose();
-} catch (err) {
-    console.error('===========================================================');
-    console.error('Gagal memuat modul sqlite3.');
-    if (process.platform === 'android') {
-        console.error('INFO TERMUX: Sepertinya Anda menjalankan bot ini di Termux.');
-        console.error('Untuk menginstal sqlite3 di Termux, jalankan perintah berikut:');
-        console.error('    npm run setup:termux');
-        console.error('    ATAU');
-        console.error('    pkg install -y python make clang && npm install sqlite3');
-    } else {
-        console.error('Harap jalankan: npm install');
-    }
-    console.error('===========================================================');
-    process.exit(1);
-}
+const Datastore = require('@seald-io/nedb');
 const path = require('path');
-const dbPath = path.resolve(__dirname, 'kartini_bot.db');
+const fs   = require('fs');
 
-const db = new sqlite3.Database(dbPath, (err) => {
-    if (err) {
-        console.error('Error opening database', err.message);
-    } else {
-        console.log('Koneksi database SQLite berhasil dibuat.');
+// === DATASTORES ===
+const DATA_DIR = path.join(__dirname, 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const DB = {
+    customers:  new Datastore({ filename: path.join(DATA_DIR, 'customers.db'),  autoload: true }),
+    history:    new Datastore({ filename: path.join(DATA_DIR, 'history.db'),    autoload: true }),
+    receipts:   new Datastore({ filename: path.join(DATA_DIR, 'receipts.db'),   autoload: true }),
+    users:      new Datastore({ filename: path.join(DATA_DIR, 'users.db'),      autoload: true }),
+    ai_configs: new Datastore({ filename: path.join(DATA_DIR, 'ai_configs.db'), autoload: true }),
+    products:   new Datastore({ filename: path.join(DATA_DIR, 'products.db'),   autoload: true }),
+    alerts:     new Datastore({ filename: path.join(DATA_DIR, 'alerts.db'),     autoload: true }),
+    faqs:       new Datastore({ filename: path.join(DATA_DIR, 'faqs.db'),       autoload: true }),
+};
+
+// Helper promise wrapper
+function run(store, method, ...args) {
+    return new Promise((resolve, reject) => {
+        store[method](...args, (err, result) => err ? reject(err) : resolve(result));
+    });
+}
+
+// === INISIALISASI ===
+const initializeDatabase = async () => {
+    // Compact semua datastore saat startup
+    Object.values(DB).forEach(s => { try { s.persistence.compactDatafile(); } catch (_) {} });
+
+    // Default admin user
+    const adminExists = await run(DB.users, 'findOne', { _id: 'admin' });
+    if (!adminExists) {
+        await run(DB.users, 'insert', { _id: 'admin', username: 'admin', password: 'admin123' });
     }
-});
 
-const initializeDatabase = () => {
-    db.serialize(() => {
-        db.run(`CREATE TABLE IF NOT EXISTS customers (id INTEGER PRIMARY KEY AUTOINCREMENT, phone_number TEXT UNIQUE NOT NULL, name TEXT, first_seen TEXT);`, (err) => {
-            if (err) console.error("Error creating customers table", err.message);
-            else console.log('Tabel "customers" siap digunakan.');
+    // Default AI config — KOSONG, user isi sendiri via dashboard
+    const configExists = await run(DB.ai_configs, 'findOne', { user_id: 'admin' });
+    if (!configExists) {
+        await run(DB.ai_configs, 'insert', {
+            user_id:          'admin',
+            provider:         'groq',
+            api_key:          '',
+            model_name:       'llama-3.3-70b-versatile',
+            system_prompt:    '',
+            business_name:    '',
+            company_email:    '',
+            company_address:  '',
+            company_social:   '',
+            company_maps:     '',
+            business_context: '',
+            gas_url:          '',   // Google Apps Script Web App URL
+            gas_sheet_sync:   false // Auto-sync produk dari GAS
         });
-        db.run(`CREATE TABLE IF NOT EXISTS message_history (id INTEGER PRIMARY KEY AUTOINCREMENT, jid TEXT NOT NULL, role TEXT NOT NULL, content TEXT NOT NULL, timestamp DATETIME DEFAULT CURRENT_TIMESTAMP);`, (err) => {
-            if (err) console.error("Error creating message_history table", err.message);
-            else console.log('Tabel "message_history" siap digunakan.');
-        });
-        db.run(`CREATE TABLE IF NOT EXISTS read_receipts (message_id TEXT PRIMARY KEY NOT NULL);`, (err) => {
-            if (err) console.error("Error creating read_receipts table", err.message);
-            else console.log('Tabel "read_receipts" siap digunakan.');
-        });
-        
-        // --- TABEL SAAS & KONFIGURASI AI ---
-        db.run(`CREATE TABLE IF NOT EXISTS users (
-            id TEXT PRIMARY KEY,
-            username TEXT UNIQUE,
-            password TEXT
-        );`, (err) => {
-            if (!err) {
-                // Insert default admin for local preview
-                db.run(`INSERT OR IGNORE INTO users (id, username, password) VALUES ('admin', 'admin', 'admin123')`);
-                console.log('Tabel "users" siap digunakan.');
-            }
-        });
+    }
 
-        db.run(`CREATE TABLE IF NOT EXISTS ai_configs (
-            user_id TEXT PRIMARY KEY,
-            provider TEXT DEFAULT 'groq',
-            api_key TEXT,
-            model_name TEXT DEFAULT 'llama-3.3-70b-versatile',
-            system_prompt TEXT,
-            business_name TEXT DEFAULT 'Nama Bisnis Anda',
-            company_email TEXT,
-            company_address TEXT,
-            company_social TEXT,
-            company_maps TEXT,
-            business_context TEXT
-        );`, (err) => {
-            if (!err) {
-                // Tambahkan kolom baru jika tabel sudah ada (migrasi)
-                const columns = ['company_email', 'company_address', 'company_social', 'company_maps', 'business_context'];
-                columns.forEach(col => {
-                    db.run(`ALTER TABLE ai_configs ADD COLUMN ${col} TEXT`, () => {}); // Ignore error if exists
-                });
-
-                // Insert default config for admin
-                const defaultPrompt = "Anda adalah asisten virtual Customer Service. Jawab dengan ramah, informatif, dan ringkas. Selalu gunakan daftar harga yang diberikan.";
-                db.run(`INSERT OR IGNORE INTO ai_configs (user_id, system_prompt) VALUES ('admin', ?)`, [defaultPrompt]);
-                console.log('Tabel "ai_configs" siap digunakan.');
-            }
-        });
-
-        db.run(`CREATE TABLE IF NOT EXISTS products (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            kategori TEXT NOT NULL,
-            nama_produk TEXT NOT NULL,
-            harga INTEGER NOT NULL,
-            keterangan TEXT
-        );`, (err) => {
-            if (!err) {
-                console.log('Tabel "products" siap digunakan.');
-            }
-        });
-        db.run(`CREATE TABLE IF NOT EXISTS system_alerts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            message TEXT NOT NULL,
-            is_read BOOLEAN DEFAULT 0,
-            timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
-        );`, (err) => {
-            if (!err) {
-                console.log('Tabel "system_alerts" siap digunakan.');
-            }
-        });
-
-        db.run(`CREATE TABLE IF NOT EXISTS faqs (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id TEXT NOT NULL,
-            command TEXT NOT NULL,
-            response TEXT NOT NULL
-        );`, (err) => {
-            if (!err) console.log('Tabel "faqs" siap digunakan.');
-        });
-    });
+    console.log('[DB] NeDB siap. Data tersimpan di ./data/');
 };
 
-const getOrAddCustomer = (phoneNumber) => {
-    return new Promise((resolve, reject) => {
-        db.get(`SELECT * FROM customers WHERE phone_number = ?`, [phoneNumber], (err, row) => {
-            if (err) return reject(err);
-            if (row) {
-                resolve({ customer: row, isNew: false });
-            } else {
-                const now = new Date().toISOString();
-                db.run(`INSERT INTO customers (phone_number, first_seen) VALUES (?, ?)`, [phoneNumber, now], function(err) {
-                    if (err) return reject(err);
-                    resolve({ customer: { id: this.lastID, phone_number: phoneNumber, name: null, first_seen: now }, isNew: true });
-                });
-            }
-        });
-    });
+// === CUSTOMERS ===
+const getOrAddCustomer = async (phoneNumber) => {
+    let customer = await run(DB.customers, 'findOne', { phone_number: phoneNumber });
+    if (customer) return { customer, isNew: false };
+    const now = new Date().toISOString();
+    customer   = await run(DB.customers, 'insert', { phone_number: phoneNumber, name: null, first_seen: now });
+    return { customer, isNew: true };
 };
 
-const updateCustomerName = (phoneNumber, newName) => {
-    return new Promise((resolve, reject) => {
-        db.run(`UPDATE customers SET name = ? WHERE phone_number = ?`, [newName, phoneNumber], function(err) {
-            if (err) reject(err);
-            else resolve({ changes: this.changes });
-        });
-    });
+const updateCustomerName = (phoneNumber, newName) =>
+    run(DB.customers, 'update', { phone_number: phoneNumber }, { $set: { name: newName } }, {});
+
+// === MESSAGE HISTORY ===
+const addMessageToHistory = async (jid, role, content) => {
+    const doc = await run(DB.history, 'insert', { jid, role, content, timestamp: new Date().toISOString() });
+    // Batasi 50 pesan per JID
+    const all = await run(DB.history, 'find', { jid });
+    all.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    if (all.length > 50) {
+        const ids = all.slice(0, all.length - 50).map(r => r._id);
+        await run(DB.history, 'remove', { _id: { $in: ids } }, { multi: true });
+    }
+    return doc;
 };
 
-const addMessageToHistory = (jid, role, content) => {
-    return new Promise((resolve, reject) => {
-        db.run(`INSERT INTO message_history (jid, role, content) VALUES (?, ?, ?)`, [jid, role, content], function(err) {
-            if (err) return reject(err);
-            db.run(`DELETE FROM message_history WHERE id IN (SELECT id FROM message_history WHERE jid = ? ORDER BY timestamp ASC LIMIT -1 OFFSET 50)`, [jid]);
-            resolve({ id: this.lastID });
-        });
-    });
+const getHistoryForJid = async (jid) => {
+    const rows = await run(DB.history, 'find', { jid });
+    rows.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    return rows.slice(-10).map(r => ({ role: r.role, content: r.content }));
 };
 
-const getHistoryForJid = (jid) => {
-    return new Promise((resolve, reject) => {
-        db.all(`SELECT role, content FROM message_history WHERE jid = ? ORDER BY timestamp DESC LIMIT 10`, [jid], (err, rows) => {
-            if (err) return reject(err);
-            resolve(rows.reverse());
-        });
-    });
+// === READ RECEIPTS ===
+const addReadReceipt = async (messageId) => {
+    const exists = await run(DB.receipts, 'findOne', { _id: messageId });
+    if (exists) return { changes: 0 };
+    await run(DB.receipts, 'insert', { _id: messageId, ts: Date.now() });
+    // Batasi 200 entri
+    const all = await run(DB.receipts, 'find', {});
+    all.sort((a, b) => a.ts - b.ts);
+    if (all.length > 200) {
+        const ids = all.slice(0, all.length - 200).map(r => r._id);
+        await run(DB.receipts, 'remove', { _id: { $in: ids } }, { multi: true });
+    }
+    return { changes: 1 };
 };
 
-const addReadReceipt = (messageId) => {
-    return new Promise((resolve, reject) => {
-        db.run(`INSERT OR IGNORE INTO read_receipts (message_id) VALUES (?)`, [messageId], function(err) {
-            if (err) return reject(err);
-            db.run(`DELETE FROM read_receipts WHERE message_id IN (SELECT message_id FROM read_receipts ORDER BY rowid ASC LIMIT -1 OFFSET 200)`);
-            resolve({ changes: this.changes });
-        });
-    });
-};
+const isMessageRead = async (messageId) => !!(await run(DB.receipts, 'findOne', { _id: messageId }));
 
-const isMessageRead = (messageId) => {
-    return new Promise((resolve, reject) => {
-        db.get(`SELECT 1 FROM read_receipts WHERE message_id = ? LIMIT 1`, [messageId], (err, row) => {
-            if (err) return reject(err);
-            resolve(!!row);
-        });
-    });
-};
-
-// --- SAAS HELPERS ---
-const getAIConfig = (userId) => {
-    return new Promise((resolve, reject) => {
-        db.get(`SELECT * FROM ai_configs WHERE user_id = ?`, [userId], (err, row) => {
-            if (err) return reject(err);
-            resolve(row);
-        });
-    });
-};
+// === AI CONFIG ===
+const getAIConfig = (userId) => run(DB.ai_configs, 'findOne', { user_id: userId });
 
 const updateAIConfig = (userId, config) => {
-    return new Promise((resolve, reject) => {
-        const { provider, api_key, model_name, system_prompt, business_name, company_email, company_address, company_social, company_maps, business_context } = config;
-        db.run(
-            `UPDATE ai_configs SET provider = ?, api_key = ?, model_name = ?, system_prompt = ?, business_name = ?, company_email = ?, company_address = ?, company_social = ?, company_maps = ?, business_context = ? WHERE user_id = ?`,
-            [provider, api_key, model_name, system_prompt, business_name, company_email, company_address, company_social, company_maps, business_context, userId],
-            function(err) {
-                if (err) reject(err);
-                else resolve({ changes: this.changes });
-            }
-        );
-    });
+    const {
+        provider, api_key, model_name, system_prompt, business_name,
+        company_email, company_address, company_social, company_maps,
+        business_context, gas_url, gas_sheet_sync
+    } = config;
+    return run(DB.ai_configs, 'update',
+        { user_id: userId },
+        { $set: {
+            provider, api_key, model_name, system_prompt, business_name,
+            company_email, company_address, company_social, company_maps,
+            business_context,
+            gas_url:        gas_url        || '',
+            gas_sheet_sync: gas_sheet_sync || false
+        }},
+        { upsert: true }
+    );
 };
 
-const getProducts = (userId) => {
-    return new Promise((resolve, reject) => {
-        db.all(`SELECT * FROM products WHERE user_id = ? ORDER BY kategori ASC`, [userId], (err, rows) => {
-            if (err) return reject(err);
-            resolve(rows);
-        });
-    });
+// === PRODUCTS ===
+const getProducts = async (userId) => {
+    const rows = await run(DB.products, 'find', { user_id: userId });
+    rows.sort((a, b) => a.kategori.localeCompare(b.kategori));
+    return rows.map(p => ({ ...p, id: p._id }));
 };
 
-const addProduct = (userId, product) => {
-    return new Promise((resolve, reject) => {
-        const { kategori, nama_produk, harga, keterangan } = product;
-        db.run(
-            `INSERT INTO products (user_id, kategori, nama_produk, harga, keterangan) VALUES (?, ?, ?, ?, ?)`,
-            [userId, kategori, nama_produk, harga, keterangan],
-            function(err) {
-                if (err) reject(err);
-                else resolve({ id: this.lastID });
-            }
-        );
+const addProduct = async (userId, product) => {
+    const doc = await run(DB.products, 'insert', {
+        user_id:    userId,
+        kategori:   product.kategori,
+        nama_produk: product.nama_produk,
+        harga:      parseInt(product.harga) || 0,
+        keterangan: product.keterangan || '',
+        wa_product_id: null   // <-- baru, untuk sinkronisasi katalog WA
     });
+    return { id: doc._id };
 };
 
-const updateProduct = (id, userId, product) => {
-    return new Promise((resolve, reject) => {
-        const { kategori, nama_produk, harga, keterangan } = product;
-        db.run(
-            `UPDATE products SET kategori = ?, nama_produk = ?, harga = ?, keterangan = ? WHERE id = ? AND user_id = ?`,
-            [kategori, nama_produk, harga, keterangan, id, userId],
-            function(err) {
-                if (err) reject(err);
-                else resolve({ changes: this.changes });
-            }
-        );
-    });
+const updateProduct = (id, userId, product) =>
+    run(DB.products, 'update',
+        { _id: id, user_id: userId },
+        { $set: {
+            kategori:    product.kategori,
+            nama_produk: product.nama_produk,
+            harga:       parseInt(product.harga) || 0,
+            keterangan:  product.keterangan || ''
+            // wa_product_id TIDAK di-reset saat edit manual
+        }},
+        {}
+    );
+
+const deleteProduct = (id, userId) =>
+    run(DB.products, 'remove', { _id: id, user_id: userId }, {});
+
+// Method baru: update wa_product_id setelah sinkronisasi
+const updateWAProductId = (productLocalId, waProductId, userId) => {
+    return run(DB.products, 'update',
+        { _id: productLocalId, user_id: userId },
+        { $set: { wa_product_id: waProductId } },
+        {}
+    );
 };
 
-const deleteProduct = (id, userId) => {
-    return new Promise((resolve, reject) => {
-        db.run(`DELETE FROM products WHERE id = ? AND user_id = ?`, [id, userId], function(err) {
-            if (err) reject(err);
-            else resolve({ changes: this.changes });
-        });
+// Upsert produk dari sumber eksternal (GAS Sync)
+const upsertProductFromGAS = async (userId, product) => {
+    const existing = await run(DB.products, 'findOne', {
+        user_id:    userId,
+        nama_produk: product.nama_produk,
+        kategori:   product.kategori
     });
+    if (existing) {
+        return updateProduct(existing._id, userId, product);
+    }
+    return addProduct(userId, product);
 };
 
-// --- FAQs ---
-const getFaqs = (userId) => {
-    return new Promise((resolve, reject) => {
-        db.all(`SELECT * FROM faqs WHERE user_id = ? ORDER BY command ASC`, [userId], (err, rows) => {
-            if (err) return reject(err);
-            resolve(rows);
-        });
-    });
+// === FAQs ===
+const getFaqs = async (userId) => {
+    const rows = await run(DB.faqs, 'find', { user_id: userId });
+    rows.sort((a, b) => a.command.localeCompare(b.command));
+    return rows.map(f => ({ ...f, id: f._id }));
 };
 
-const addFaq = (userId, faq) => {
-    return new Promise((resolve, reject) => {
-        db.run(
-            `INSERT INTO faqs (user_id, command, response) VALUES (?, ?, ?)`,
-            [userId, faq.command, faq.response],
-            function(err) {
-                if (err) reject(err);
-                else resolve({ id: this.lastID });
-            }
-        );
-    });
+const addFaq = async (userId, faq) => {
+    const doc = await run(DB.faqs, 'insert', { user_id: userId, command: faq.command, response: faq.response });
+    return { id: doc._id };
 };
 
-const updateFaq = (id, userId, faq) => {
-    return new Promise((resolve, reject) => {
-        db.run(
-            `UPDATE faqs SET command = ?, response = ? WHERE id = ? AND user_id = ?`,
-            [faq.command, faq.response, id, userId],
-            function(err) {
-                if (err) reject(err);
-                else resolve({ changes: this.changes });
-            }
-        );
+const updateFaq = (id, userId, faq) =>
+    run(DB.faqs, 'update',
+        { _id: id, user_id: userId },
+        { $set: { command: faq.command, response: faq.response } },
+        {}
+    );
+
+const deleteFaq = (id, userId) =>
+    run(DB.faqs, 'remove', { _id: id, user_id: userId }, {});
+
+// === SYSTEM ALERTS ===
+const addSystemAlert = async (userId, message) => {
+    const doc = await run(DB.alerts, 'insert', {
+        user_id: userId, message, is_read: false, timestamp: new Date().toISOString()
     });
+    // Batasi 20 alert per user
+    const all = await run(DB.alerts, 'find', { user_id: userId });
+    all.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+    if (all.length > 20) {
+        const ids = all.slice(0, all.length - 20).map(r => r._id);
+        await run(DB.alerts, 'remove', { _id: { $in: ids } }, { multi: true });
+    }
+    return { id: doc._id };
 };
 
-const deleteFaq = (id, userId) => {
-    return new Promise((resolve, reject) => {
-        db.run(`DELETE FROM faqs WHERE id = ? AND user_id = ?`, [id, userId], function(err) {
-            if (err) reject(err);
-            else resolve({ changes: this.changes });
-        });
-    });
+const getSystemAlerts = async (userId) => {
+    const rows = await run(DB.alerts, 'find', { user_id: userId });
+    rows.sort((a, b) => b.timestamp.localeCompare(a.timestamp));
+    return rows.slice(0, 20).map(a => ({
+        id:        a._id,
+        message:   a.message,
+        is_read:   a.is_read ? 1 : 0,
+        timestamp: a.timestamp
+    }));
 };
 
-// --- SYSTEM ALERTS ---
-const addSystemAlert = (userId, message) => {
-    return new Promise((resolve, reject) => {
-        db.run(`INSERT INTO system_alerts (user_id, message) VALUES (?, ?)`, [userId, message], function(err) {
-            if (err) return reject(err);
-            // Limit to last 20 alerts per user
-            db.run(`DELETE FROM system_alerts WHERE id IN (SELECT id FROM system_alerts WHERE user_id = ? ORDER BY timestamp DESC LIMIT -1 OFFSET 20)`, [userId]);
-            resolve({ id: this.lastID });
-        });
-    });
-};
+const markAlertsAsRead = (userId) =>
+    run(DB.alerts, 'update',
+        { user_id: userId, is_read: false },
+        { $set: { is_read: true } },
+        { multi: true }
+    );
 
-const getSystemAlerts = (userId) => {
-    return new Promise((resolve, reject) => {
-        db.all(`SELECT id, message, is_read, timestamp FROM system_alerts WHERE user_id = ? ORDER BY timestamp DESC LIMIT 20`, [userId], (err, rows) => {
-            if (err) return reject(err);
-            resolve(rows);
-        });
-    });
-};
-
-const markAlertsAsRead = (userId) => {
-    return new Promise((resolve, reject) => {
-        db.run(`UPDATE system_alerts SET is_read = 1 WHERE user_id = ? AND is_read = 0`, [userId], function(err) {
-            if (err) reject(err);
-            else resolve({ changes: this.changes });
-        });
-    });
-};
-
-module.exports = { 
-    initializeDatabase, getOrAddCustomer, updateCustomerName, addMessageToHistory, 
-    getHistoryForJid, addReadReceipt, isMessageRead,
-    getAIConfig, updateAIConfig, getProducts, addProduct, updateProduct, deleteProduct,
+module.exports = {
+    initializeDatabase,
+    getOrAddCustomer, updateCustomerName,
+    addMessageToHistory, getHistoryForJid,
+    addReadReceipt, isMessageRead,
+    getAIConfig, updateAIConfig,
+    getProducts, addProduct, updateProduct, deleteProduct, upsertProductFromGAS,
+    updateWAProductId,   // <-- ekspor method baru
     getFaqs, addFaq, updateFaq, deleteFaq,
-    addSystemAlert, getSystemAlerts, markAlertsAsRead
+    addSystemAlert, getSystemAlerts, markAlertsAsRead,
 };

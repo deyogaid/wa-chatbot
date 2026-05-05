@@ -2,6 +2,7 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 const db = require('./database');
+const axios = require('axios');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -10,14 +11,12 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // Dummy authentication middleware for local preview
-// In a real SaaS, this would use JWT or session cookies
 const mockAuth = (req, res, next) => {
     req.user = { id: 'admin' };
     next();
 };
 
 // --- AI CONFIG ENDPOINTS ---
-
 app.get('/api/ai-config', mockAuth, async (req, res) => {
     try {
         const config = await db.getAIConfig(req.user.id);
@@ -31,12 +30,9 @@ app.post('/api/ai-config', mockAuth, async (req, res) => {
     try {
         const config = req.body;
         await db.updateAIConfig(req.user.id, config);
-        
-        // Update .env file based on provider
         if (config.api_key) {
             updateEnvKey(config.provider, config.api_key);
         }
-        
         res.json({ success: true, message: 'Configuration saved successfully' });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
@@ -44,7 +40,6 @@ app.post('/api/ai-config', mockAuth, async (req, res) => {
 });
 
 // --- PRODUCT ENDPOINTS ---
-
 app.get('/api/products', mockAuth, async (req, res) => {
     try {
         const products = await db.getProducts(req.user.id);
@@ -82,7 +77,6 @@ app.delete('/api/products/:id', mockAuth, async (req, res) => {
 });
 
 // --- FAQ ENDPOINTS ---
-
 app.get('/api/faqs', mockAuth, async (req, res) => {
     try {
         const faqs = await db.getFaqs(req.user.id);
@@ -120,14 +114,11 @@ app.delete('/api/faqs/:id', mockAuth, async (req, res) => {
 });
 
 // --- FETCH MODELS ENDPOINT ---
-const axios = require('axios');
 app.post('/api/models', mockAuth, async (req, res) => {
     const { provider, api_key } = req.body;
-    
     if (!api_key && provider !== 'openrouter') {
         return res.json({ success: false, error: 'API Key diperlukan untuk mengambil daftar model.' });
     }
-
     try {
         let models = [];
         if (provider === 'groq') {
@@ -149,8 +140,6 @@ app.post('/api/models', mockAuth, async (req, res) => {
         } else {
             return res.json({ success: false, error: 'Provider tidak didukung.' });
         }
-        
-        // Urutkan model secara alfabet
         models.sort();
         res.json({ success: true, models });
     } catch (err) {
@@ -166,8 +155,7 @@ app.post('/api/models', mockAuth, async (req, res) => {
 app.get('/api/alerts', mockAuth, async (req, res) => {
     try {
         const alerts = await db.getSystemAlerts(req.user.id);
-        const unreadCount = alerts.filter(a => a.is_read === 0).length;
-        res.json({ success: true, alerts, unreadCount });
+        res.json({ success: true, alerts, unreadCount: alerts.filter(a => a.is_read === 0).length });
     } catch (err) {
         res.status(500).json({ success: false, error: err.message });
     }
@@ -186,28 +174,22 @@ app.post('/api/alerts/read', mockAuth, async (req, res) => {
 function updateEnvKey(provider, apiKey) {
     const envPath = path.resolve(__dirname, '.env');
     if (!fs.existsSync(envPath)) return;
-
     let content = fs.readFileSync(envPath, 'utf8');
     let keyName = '';
-
     switch (provider) {
         case 'groq': keyName = 'GROQ_API_KEY'; break;
         case 'gemini': keyName = 'GEMINI_API_KEY'; break;
         case 'openai': keyName = 'OPENAI_API_KEY'; break;
         case 'openrouter': keyName = 'OPENROUTER_API_KEY'; break;
     }
-
     if (!keyName) return;
-
     const regex = new RegExp(`^${keyName}=.*`, 'm');
     if (regex.test(content)) {
         content = content.replace(regex, `${keyName}=${apiKey}`);
     } else {
         content += `\n${keyName}=${apiKey}`;
     }
-
     fs.writeFileSync(envPath, content, 'utf8');
-    // Also update process.env for immediate effect in this session
     process.env[keyName] = apiKey;
 }
 

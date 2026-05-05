@@ -1,19 +1,22 @@
 {
   "name": "wa-chatbot",
   "version": "1.0.0",
-  "description": "",
+  "description": "WhatsApp CS Bot - Zero Native Dependencies (Termux Compatible)",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1",
-    "setup:termux": "pkg install -y python make clang && npm install"
+    "start": "node index.js",
+    "dashboard": "node server.js",
+    "setup": "npm install",
+    "setup:termux": "npm install"
   },
   "keywords": [],
-  "author": "",
+  "author": "dedeyoga",
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
     "@google/generative-ai": "^0.24.1",
     "@hapi/boom": "^10.0.1",
+    "@seald-io/nedb": "^4.0.4",
     "@whiskeysockets/baileys": "^6.7.17",
     "axios": "^1.10.0",
     "dotenv": "^16.5.0",
@@ -21,8 +24,6 @@
     "node-telegram-bot-api": "^0.63.0",
     "openai": "^4.103.0",
     "pino-pretty": "^13.0.0",
-    "qrcode-terminal": "^0.12.0",
-    "sqlite": "^5.1.1",
-    "sqlite3": "^5.0.2"
+    "qrcode-terminal": "^0.12.0"
   }
 }

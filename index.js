@@ -1,17 +1,17 @@
 // =================================================================
-// KARTINI DIGITAL PRINTING - WHATSAPP BOT V3.8
-// AI: Gemini 2.0 -> OpenAI -> OpenRouter -> Groq (Lapis 4, GRATIS & CEPAT)
+// WA CHATBOT - UNIVERSAL CS BOT
+// Bot WA + Dashboard API dalam satu proses, port 3000
+// Compatible: Linux, macOS, Windows, Android (Termux)
 // =================================================================
 
-// 1. IMPORTS & DEPENDENCIES
-const express = require('express');
-const app = express();
+require('dotenv').config();
 
+const express = require('express');
+const path    = require('path');
+const fs      = require('fs');
+const app     = express();
 app.use(express.json());
 
-let currentSock = null;
-
-require('dotenv').config();
 const {
     default: makeWASocket,
     useMultiFileAuthState,
@@ -21,82 +21,52 @@ const {
     delay,
     downloadMediaMessage
 } = require('@whiskeysockets/baileys');
-const { Boom }    = require('@hapi/boom');
-const pino        = require('pino');
-const qrcode      = require('qrcode-terminal');
-const { OpenAI }  = require("openai");
+const { Boom }               = require('@hapi/boom');
+const pino                   = require('pino');
+const qrcode                 = require('qrcode-terminal');
+const { OpenAI }             = require('openai');
 const { GoogleGenerativeAI } = require('@google/generative-ai');
-const axios       = require('axios');
-const TelegramBot = require('node-telegram-bot-api');
-const db          = require('./database.js');
-const AIFactory   = require('./ai_factory.js');
+const axios                  = require('axios');
+const db                     = require('./database.js');
+const AIFactory              = require('./ai_factory.js');
+
+// Telegram bot opsional
+let TelegramBot;
+try { TelegramBot = require('node-telegram-bot-api'); } catch (_) {}
 
 // =================================================================
-// 2. CONFIGURATION
+// KONFIGURASI TEKNIS
 // =================================================================
-const config = {
-    // ── API Keys ──────────────────────────────────────────────────
-    geminiApiKey:     process.env.GEMINI_API_KEY,
-    openaiApiKey:     process.env.OPENAI_API_KEY,
-    openrouterApiKey: process.env.OPENROUTER_API_KEY,
-    groqApiKey:       process.env.GROQ_API_KEY,           // ← LAPIS 4 (gratis di groq.com)
-
-    // ── Model AI ──────────────────────────────────────────────────
-    // Lapis 1 – Gemini
-    geminiModel: process.env.GEMINI_MODEL || "gemini-2.0-flash",
-
-    // Lapis 3 – OpenRouter: dicoba satu per satu sampai ada yang berhasil
-    openrouterModels: process.env.OPENROUTER_MODEL
-        ? [process.env.OPENROUTER_MODEL]
-        : [
-            "mistralai/mistral-7b-instruct:free",
-            "google/gemma-2-9b-it:free",
-            "meta-llama/llama-3.2-3b-instruct:free",
-            "qwen/qwen-2-7b-instruct:free",
-            "microsoft/phi-3-mini-128k-instruct:free",
-        ],
-
-    // Lapis 4 – Groq: model gratis paling stabil per April 2026
-    groqModels: process.env.GROQ_MODEL
-        ? [process.env.GROQ_MODEL]
-        : [
-            "llama-3.3-70b-versatile",   // terbaik, cepat, gratis
-            "llama-3.1-8b-instant",       // ultra cepat, fallback ringan
-            "gemma2-9b-it",               // alternatif Google
-            "mixtral-8x7b-32768",         // konteks panjang
-        ],
-
-    // ── Integrasi Eksternal ───────────────────────────────────────
-    n8nWebhookUrl:    process.env.N8N_WEBHOOK_URL,
-    telegramBotToken: process.env.TELEGRAM_BOT_TOKEN,
-    telegramChatId:   process.env.TELEGRAM_CHAT_ID,
-
-    // ── Informasi Bisnis ──────────────────────────────────────────
-    businessName: "KARTINI DIGITAL PRINTING 24 JAM",
-    email:        "kartinidigitalprinting24jam@gmail.com",
-    instagram:    "kartinidigitalprinting",
-    address:      "Jl. Kartini No.5, Depok, Kec. Pancoran Mas, Kota Depok, Jawa Barat 16436",
-    gmapsUrl:     "https://maps.app.goo.gl/yourmaplink",
-
-    // ── Pengaturan Bot ────────────────────────────────────────────
-    ownerPauseDuration: 5 * 60 * 1000,
+const TECH = {
+    ownerPauseDuration: (parseInt(process.env.OWNER_PAUSE_MINUTES) || 5) * 60 * 1000,
+    telegramBotToken:   process.env.TELEGRAM_BOT_TOKEN,
+    telegramChatId:     process.env.TELEGRAM_CHAT_ID,
+    n8nWebhookUrl:      process.env.N8N_WEBHOOK_URL,
+    groqModels:         ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'],
+    openrouterModels:   ['meta-llama/llama-3.1-8b-instruct:free', 'google/gemma-2-9b-it:free'],
 };
 
-// =================================================================
-// 3. LOGGER & VALIDASI
-// =================================================================
 const logger = pino({ transport: { target: 'pino-pretty' } });
 
 let telegramBot;
-if (config.telegramBotToken && config.telegramChatId) {
-    telegramBot = new TelegramBot(config.telegramBotToken, { polling: false });
+if (TelegramBot && TECH.telegramBotToken && TECH.telegramChatId) {
+    telegramBot = new TelegramBot(TECH.telegramBotToken, { polling: false });
     logger.info('Notifikasi Telegram aktif.');
 }
 
 const userActivityCache = {};
+const OWNER_NUMBERS = (process.env.OWNER_NUMBERS || '').split(',').map(n => n.trim()).filter(Boolean);
+
+// Status bot — dibaca oleh /api/bot-status
+let botStatus = {
+    status: 'disconnected', // 'connecting' | 'connected' | 'disconnected'
+    qr:     null,
+    phone:  null,
+    since:  null,
+};
 
 // =================================================================
-// 4. DYNAMIC SYSTEM PROMPT
+// DYNAMIC SYSTEM PROMPT
 // =================================================================
 async function buildDynamicSystemPrompt(userId) {
     const aiConfig = await db.getAIConfig(userId);
@@ -107,31 +77,39 @@ async function buildDynamicSystemPrompt(userId) {
     const categories = {};
     products.forEach(p => {
         if (!categories[p.kategori]) categories[p.kategori] = [];
-        const harga = p.harga.toLocaleString('id-ID');
+        const harga = Number(p.harga).toLocaleString('id-ID');
         const ket   = p.keterangan ? ` (${p.keterangan})` : '';
         categories[p.kategori].push(`- ${p.nama_produk}${ket}: Rp${harga}`);
     });
-    
+
     const priceListString = Object.entries(categories)
         .map(([cat, items]) => `\nKategori: *${cat}*\n${items.join('\n')}`)
         .join('\n');
-        
-    const businessName = aiConfig?.business_name || "SaaS Bot";
-    const basePrompt = aiConfig?.system_prompt || `Anda adalah asisten virtual Customer Service untuk "${businessName}".`;
 
-    let companyContext = "";
-    if (aiConfig?.company_email) companyContext += `- Email: ${aiConfig.company_email}\n`;
-    if (aiConfig?.company_address) companyContext += `- Alamat: ${aiConfig.company_address}\n`;
-    if (aiConfig?.company_social) companyContext += `- Sosial Media: ${aiConfig.company_social}\n`;
-    if (aiConfig?.company_maps) companyContext += `- Maps: ${aiConfig.company_maps}\n`;
-    if (aiConfig?.business_context) companyContext += `\nKonteks Tambahan Bisnis:\n${aiConfig.business_context}\n`;
+    const businessName = aiConfig?.business_name || 'Toko Kami';
+    const basePrompt   = aiConfig?.system_prompt  || `Anda adalah asisten virtual Customer Service untuk "${businessName}". Jawab dengan ramah dan informatif.`;
 
-    const fullPrompt = `${basePrompt}\n\nATURAN UTAMA:\n1. JAWAB SINGKAT & JELAS: Langsung ke inti jawaban, hindari bertele-tele.\n2. GUNAKAN DAFTAR HARGA: Jangan pernah menebak harga. Gunakan harga PASTI sesuai daftar.\n3. SAPA PERSONAL: Sapa pelanggan dengan nama jika tersedia.\n4. HITUNG OTOMATIS: Bantu hitung biaya pesanan jika diminta (luas x harga, jumlah x satuan, dll).\n\n--- PROFIL PERUSAHAAN ---\n${companyContext}\n--- DAFTAR HARGA RESMI ---\n${priceListString}\n--- AKHIR DAFTAR HARGA ---`;
-    return fullPrompt;
+    let companyContext = '';
+    if (aiConfig?.company_email)    companyContext += `- Email: ${aiConfig.company_email}\n`;
+    if (aiConfig?.company_address)  companyContext += `- Alamat: ${aiConfig.company_address}\n`;
+    if (aiConfig?.company_social)   companyContext += `- Sosial Media: ${aiConfig.company_social}\n`;
+    if (aiConfig?.company_maps)     companyContext += `- Google Maps: ${aiConfig.company_maps}\n`;
+    if (aiConfig?.business_context) companyContext += `\nKonteks Bisnis:\n${aiConfig.business_context}\n`;
+
+    const now      = new Date();
+    const wibTime  = { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false };
+    const wibDate  = { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long' };
+    const timeCtx  = `\n\n[Waktu Sekarang]: ${now.toLocaleDateString('id-ID', wibDate)}, pukul ${now.toLocaleTimeString('id-ID', wibTime)} WIB.`;
+
+    const priceSection = priceListString
+        ? `\n--- DAFTAR HARGA RESMI ---\n${priceListString}\n--- AKHIR DAFTAR HARGA ---`
+        : '\n[Belum ada daftar harga. Sampaikan bahwa harga akan dikonfirmasi oleh tim kami.]';
+
+    return `${basePrompt}\n\nATURAN UTAMA:\n1. JAWAB SINGKAT & JELAS: Langsung ke inti, hindari bertele-tele.\n2. GUNAKAN DAFTAR HARGA: Jangan menebak harga. Gunakan harga PASTI dari daftar.\n3. SAPA PERSONAL: Sapa pelanggan dengan nama jika tersedia.\n4. HITUNG OTOMATIS: Bantu hitung biaya jika diminta.\n\n--- PROFIL PERUSAHAAN ---\n${companyContext || '[Profil belum diisi. Isi di Dashboard → Pengaturan AI]'}\n${priceSection}${timeCtx}`;
 }
 
 // =================================================================
-// 6. HELPER FUNCTIONS
+// HELPERS
 // =================================================================
 const sendMessageWTyping = async (sock, jid, content, options = {}) => {
     await sock.presenceSubscribe(jid);
@@ -139,223 +117,215 @@ const sendMessageWTyping = async (sock, jid, content, options = {}) => {
     await sock.sendPresenceUpdate('composing', jid);
     await delay(1200);
     await sock.sendPresenceUpdate('paused', jid);
-    await sock.sendMessage(jid, content, options);
+    return sock.sendMessage(jid, content, options);
 };
 
 const getMessageContent = (msg) =>
-    msg.message?.conversation                  ||
-    msg.message?.extendedTextMessage?.text     ||
-    msg.message?.imageMessage?.caption         ||
-    msg.message?.videoMessage?.caption         || "";
+    msg.message?.conversation              ||
+    msg.message?.extendedTextMessage?.text ||
+    msg.message?.imageMessage?.caption     ||
+    msg.message?.videoMessage?.caption     || '';
 
-// =================================================================
-// 6. FUNGSI AI (DYNAMIC)
-// =================================================================
-
-async function getAIReply(userText, history = [], customerName = null) {
-    const userId = 'admin'; // Single-tenant fallback
-    const config = await db.getAIConfig(userId);
-    
-    if (!config || !config.api_key) {
-        logger.error(`API Key belum dikonfigurasi untuk user: ${userId}`);
-        return "Maaf, sistem AI belum dikonfigurasi oleh pemilik bot. Silakan masukkan API Key di Dashboard.";
-    }
-
-    const systemPrompt = await buildDynamicSystemPrompt(userId);
-    const now = new Date();
-    const wibTime = { timeZone: 'Asia/Jakarta', hour: '2-digit', minute: '2-digit', hour12: false };
-    const wibDate = { timeZone: 'Asia/Jakarta', weekday: 'long', day: 'numeric', month: 'long' };
-    
-    let timeContext = `\n\n[Waktu Sekarang]: Hari ${now.toLocaleDateString('id-ID', wibDate)}, pukul ${now.toLocaleTimeString('id-ID', wibTime)} WIB.`;
-    
-    const fullConfig = {
-        ...config,
-        system_prompt: systemPrompt + timeContext
-    };
-
-    logger.info(`Menghubungi AI Factory (${fullConfig.provider})...`);
-    return await AIFactory.generateReply(fullConfig, userText, history, customerName);
+async function getBusinessName(userId = 'admin') {
+    const cfg = await db.getAIConfig(userId);
+    return cfg?.business_name || 'Toko Kami';
 }
 
-/**
- * summarizeConversation
- */
-async function summarizeConversation(history) {
+// =================================================================
+// AI REPLY
+// =================================================================
+async function getAIReply(userText, history = [], customerName = null, userId = 'admin') {
+    const config = await db.getAIConfig(userId);
+    if (!config?.api_key) {
+        return '⚙️ Sistem AI belum dikonfigurasi. Hubungi admin untuk mengatur API Key di Dashboard.';
+    }
+    const systemPrompt = await buildDynamicSystemPrompt(userId);
+    const fullConfig   = { ...config, system_prompt: systemPrompt, user_id: userId };
+    logger.info(`[AI] Menghubungi provider: ${fullConfig.provider}`);
+    return AIFactory.generateReply(fullConfig, userText, history, customerName);
+}
+
+async function summarizeConversation(history, userId = 'admin') {
     if (!history?.length) return null;
     const text   = history.map(m => `${m.role === 'user' ? 'Pelanggan' : 'Bot'}: ${m.content}`).join('\n');
-    const prompt = `Buat rangkuman singkat poin-poin dari percakapan CS percetakan ini:\n\n${text}`;
-    
-    const userId = 'admin';
+    const prompt = `Buat rangkuman singkat poin-poin penting dari percakapan CS ini:\n\n${text}`;
     const config = await db.getAIConfig(userId);
-    if (!config || !config.api_key) return "Gagal merangkum: API Key belum dikonfigurasi.";
-    
-    return await AIFactory.generateReply(config, prompt, [], null);
-}
-
-/**
- * classifyImageWithAI – Klasifikasi gambar
- */
-async function classifyImageWithAI(imageBuffer) {
-    // Saat ini disederhanakan karena tidak semua API Key (seperti Groq Llama 3 standar) 
-    // mendukung Vision secara native. 
-    // Untuk pengembangan SaaS lebih lanjut, ini akan menggunakan provider yang mendukung vision (contoh: OpenAI gpt-4o / Gemini).
-    return 'gambar_umum';
+    if (!config?.api_key) return null;
+    return AIFactory.generateReply(config, prompt, [], null);
 }
 
 // =================================================================
-// 8. INTEGRASI EKSTERNAL
+// INTEGRASI EKSTERNAL
 // =================================================================
 async function forwardPaymentToN8N(sender, caption, imageBuffer) {
-    if (!config.n8nWebhookUrl) return;
+    if (!TECH.n8nWebhookUrl) return;
     try {
-        await axios.post(config.n8nWebhookUrl, {
+        await axios.post(TECH.n8nWebhookUrl, {
             sender:       sender.split('@')[0],
-            caption:      caption || "Tidak ada caption",
+            caption:      caption || 'Tidak ada caption',
             image_base64: imageBuffer.toString('base64'),
             timestamp:    new Date().toISOString(),
         }, { headers: { 'Content-Type': 'application/json' } });
-    } catch { logger.error('Gagal forward ke n8n.'); }
+    } catch (e) {
+        logger.error('[N8N] Gagal forward:', e.message);
+    }
 }
 
 async function sendTelegramNotification(text, imageBuffer = null) {
     if (!telegramBot) return;
     try {
         if (imageBuffer) {
-            await telegramBot.sendPhoto(config.telegramChatId, imageBuffer, { caption: text, parse_mode: 'Markdown' });
+            await telegramBot.sendPhoto(TECH.telegramChatId, imageBuffer, { caption: text, parse_mode: 'Markdown' });
         } else {
-            await telegramBot.sendMessage(config.telegramChatId, text, { parse_mode: 'Markdown' });
+            await telegramBot.sendMessage(TECH.telegramChatId, text, { parse_mode: 'Markdown' });
         }
-    } catch { logger.error('Gagal kirim Telegram.'); }
+    } catch (e) {
+        logger.error('[Telegram] Gagal kirim:', e.message);
+    }
 }
 
 async function sendMenuWithButtons(sock, jid, greeting, quoted = {}) {
-    await sendMessageWTyping(sock, jid, {
-        text:   greeting,
-        footer: `© ${config.businessName}`,
-        buttons: [
-            { buttonId: '/layanan',   buttonText: { displayText: 'Info Layanan & Produk' }, type: 1 },
-            { buttonId: '/carapesan', buttonText: { displayText: 'Cara Pemesanan'         }, type: 1 },
-            { buttonId: '/alamat',    buttonText: { displayText: 'Lokasi Kami'             }, type: 1 },
-        ],
-        headerType: 1,
-    }, { quoted });
+    await sendMessageWTyping(sock, jid, { text: greeting }, { quoted });
 }
 
 // =================================================================
-// 9. EVENT HANDLERS
+// EVENT HANDLERS
 // =================================================================
 const handleConnectionUpdate = (sock) => ({ connection, lastDisconnect, qr }) => {
-    if (qr) qrcode.generate(qr, { small: true });
+    if (qr) {
+        botStatus.qr     = qr;
+        botStatus.status = 'connecting';
+        qrcode.generate(qr, { small: true });
+    }
     if (connection === 'close') {
-        const reconnect = new Boom(lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
-        logger.warn(`Koneksi terputus. Reconnect: ${reconnect}`);
+        botStatus.status = 'disconnected';
+        botStatus.qr     = null;
+        botStatus.phone  = null;
+        const reconnect  = new Boom(lastDisconnect?.error)?.output?.statusCode !== DisconnectReason.loggedOut;
+        logger.warn(`[WA] Koneksi terputus. Reconnect: ${reconnect}`);
         if (reconnect) setTimeout(startBot, 5000);
+        else logger.fatal('[WA] Sesi tidak valid. Hapus auth_info_baileys/ dan scan ulang.');
     } else if (connection === 'open') {
-        logger.info(`Bot ${config.businessName} tersambung dan siap!`);
+        botStatus.status = 'connected';
+        botStatus.qr     = null;
+        botStatus.since  = new Date().toISOString();
+        botStatus.phone  = sock.user?.id?.split(':')[0] || null;
+        logger.info('[WA] ✅ Bot tersambung dan siap!');
     }
 };
 
 const handleMessagesUpsert = (sock) => async ({ messages }) => {
     const msg = messages[0];
-    if (!msg.message || msg.key.fromMe) return;
+    if (!msg?.message) return;
 
-    const sender = msg.key.remoteJid;
-    if (!sender || sender.endsWith('@g.us')) return;
-
-    if (await db.isMessageRead(msg.key.id)) return;
-
-    if (userActivityCache[sender] && Date.now() < userActivityCache[sender]) {
-        logger.info(`Bot pause untuk ${sender}.`);
-        return;
-    }
-
-    const { customer, isNew } = await db.getOrAddCustomer(sender);
-    const customerName = customer?.name;
-
-    if (msg.message.stickerMessage) return;
-
-    // ── Handler Gambar ────────────────────────────────────────────
-    if (msg.message.imageMessage) {
-        try {
-            const caption     = getMessageContent(msg);
-            const imageBuffer = await downloadMediaMessage(msg, 'buffer', {}, { logger });
-            const type        = await classifyImageWithAI(imageBuffer);
-            const userHistory = await db.getHistoryForJid(sender);
-
-            if (type.includes('bukti_pembayaran')) {
-                const txt = `Terima kasih ${customerName ? 'Kak ' + customerName : 'Kak'}, bukti pembayaran sudah kami terima! Pesanan segera diproses.`;
-                await sendMessageWTyping(sock, sender, { text: txt }, { quoted: msg });
-                await Promise.all([
-                    forwardPaymentToN8N(sender, caption, imageBuffer),
-                    sendTelegramNotification(
-                        `*Bukti Pembayaran Masuk*\nDari: \`${sender.split('@')[0]}\`\nNama: ${customerName || 'N/A'}\nKet: ${caption || '-'}`,
-                        imageBuffer
-                    ),
-                ]);
-            } else if (type.includes('dokumen')) {
-                await sendMessageWTyping(sock, sender, { text: 'Dokumen diterima, terima kasih!' }, { quoted: msg });
-            } else {
-                const reply = await getAIReply(caption || "Saya mengirim gambar.", userHistory, customerName);
-                if (reply) {
-                    await sendMessageWTyping(sock, sender, { text: reply }, { quoted: msg });
-                    await db.addMessageToHistory(sender, 'user', caption || "Kirim gambar");
-                    await db.addMessageToHistory(sender, 'assistant', reply);
-                }
-            }
-        } catch (e) {
-            logger.error({ err: e.message }, 'Error proses gambar.');
+    if (msg.key.fromMe) {
+        const text = getMessageContent(msg).trim().toLowerCase();
+        if (text === '/pause') {
+            const jid = msg.key.remoteJid;
+            userActivityCache[jid] = Date.now() + TECH.ownerPauseDuration;
+            logger.info(`[PAUSE] Bot di-pause untuk ${jid} selama ${TECH.ownerPauseDuration / 60000} menit.`);
         }
         return;
     }
 
-    // ── Handler Teks ──────────────────────────────────────────────
+    const sender = msg.key.remoteJid;
+    if (!sender || sender.endsWith('@g.us') || sender.endsWith('@broadcast')) return;
+    if (await db.isMessageRead(msg.key.id)) return;
+
+    if (userActivityCache[sender] && Date.now() < userActivityCache[sender]) {
+        logger.info(`[PAUSE] Pesan dari ${sender} diabaikan (owner mode).`);
+        return;
+    }
+
+    const { customer, isNew } = await db.getOrAddCustomer(sender);
+    const customerName = customer?.name || null;
+    const userId = 'admin';
+
+    if (msg.message.stickerMessage) return;
+
+    // ── GAMBAR ────────────────────────────────────────────────────
+    if (msg.message.imageMessage) {
+        try {
+            const caption     = getMessageContent(msg);
+            const imageBuffer = await downloadMediaMessage(msg, 'buffer', {}, { logger });
+            const userHistory = await db.getHistoryForJid(sender);
+            const isBayar     = caption && /bayar|transfer|bukti|payment/i.test(caption);
+
+            if (isBayar) {
+                const txt = `Terima kasih${customerName ? ` Kak ${customerName}` : ''}, bukti pembayaran diterima! Tim kami akan segera verifikasi.`;
+                await sendMessageWTyping(sock, sender, { text: txt }, { quoted: msg });
+                await Promise.all([
+                    forwardPaymentToN8N(sender, caption, imageBuffer),
+                    sendTelegramNotification(
+                        `*💰 Bukti Pembayaran Masuk*\nDari: \`${sender.split('@')[0]}\`\nNama: ${customerName || 'N/A'}\nKet: ${caption || '-'}`,
+                        imageBuffer
+                    ),
+                ]);
+            } else {
+                const question = caption || 'Saya mengirim gambar ini.';
+                const reply    = await getAIReply(question, userHistory, customerName, userId);
+                if (reply) {
+                    await sendMessageWTyping(sock, sender, { text: reply }, { quoted: msg });
+                    await db.addMessageToHistory(sender, 'user', question);
+                    await db.addMessageToHistory(sender, 'assistant', reply);
+                }
+            }
+        } catch (e) {
+            logger.error('[GAMBAR] Error:', e.message);
+        }
+        return;
+    }
+
+    // ── TEKS ──────────────────────────────────────────────────────
     const text    = getMessageContent(msg).trim();
     if (!text) return;
     const command = text.toLowerCase();
+    logger.info(`[MSG] ${sender.split('@')[0]}: ${text.substring(0, 80)}`);
 
-    const navCmds = ['/menu', '/bantuan', '/help'];
-    if (!navCmds.includes(command)) await db.addMessageToHistory(sender, 'user', text);
+    await db.addReadReceipt(msg.key.id);
 
-    // Sambut pelanggan baru
     if (isNew) {
-        const hour = parseInt(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: 'numeric', hour12: false }));
+        const businessName = await getBusinessName(userId);
+        const hour  = parseInt(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: 'numeric', hour12: false }));
         const greet = hour < 11 ? 'Selamat Pagi' : hour < 15 ? 'Selamat Siang' : hour < 19 ? 'Selamat Sore' : 'Selamat Malam';
-        await sendMenuWithButtons(
-            sock, sender,
-            `${greet} Kak! Selamat datang di *${config.businessName}*.\n\nAda yang bisa kami bantu?`,
-            { quoted: msg }
-        );
-        await db.addMessageToHistory(sender, 'assistant', 'Menu sambutan awal');
+        const welcomeMsg = `${greet} Kak! Selamat datang di *${businessName}* 👋\n\nAda yang bisa kami bantu? Langsung ketik pertanyaan Anda ya!`;
+        await sendMenuWithButtons(sock, sender, welcomeMsg, { quoted: msg });
+        await db.addMessageToHistory(sender, 'assistant', '[Pesan sambutan awal]');
         return;
     }
 
-    // Command FAQ Dinamis (Balasan Cepat)
-    const faqs = await db.getFaqs('admin');
-    const matchedFaq = faqs.find(f => f.command.toLowerCase() === command);
-    
-    if (matchedFaq) {
-        await sendMessageWTyping(sock, sender, { text: matchedFaq.response }, { quoted: msg });
-        await db.addMessageToHistory(sender, 'assistant', matchedFaq.response);
+    if (['/menu', '/bantuan', '/help', 'menu', 'halo', 'hai', 'hi', 'p'].includes(command)) {
+        const businessName = await getBusinessName(userId);
+        await sendMessageWTyping(sock, sender, {
+            text: `Halo${customerName ? ` Kak ${customerName}` : ''}! 👋 Ada yang bisa dibantu di *${businessName}*?\n\nSilakan ketik pertanyaan Anda langsung ya!`
+        }, { quoted: msg });
         return;
     }
-    if (navCmds.includes(command)) {
-        await sendMenuWithButtons(sock, sender, 'Ada yang bisa dibantu lagi, Kak?', { quoted: msg });
-        return;
-    }
-    if (command.startsWith('/simpan-nama ')) {
-        const nama = text.substring(13).trim();
+
+    if (command.startsWith('/simpan-nama ') || command.startsWith('nama saya ')) {
+        const prefix = command.startsWith('/simpan-nama ') ? 13 : 9;
+        const nama   = text.substring(prefix).trim();
         if (nama) {
             await db.updateCustomerName(sender, nama);
-            const res = `Nama *${nama}* sudah tersimpan. Senang melayani Anda!`;
+            const res = `✅ Nama *${nama}* sudah tersimpan. Senang melayani Anda!`;
             await sendMessageWTyping(sock, sender, { text: res }, { quoted: msg });
             await db.addMessageToHistory(sender, 'assistant', res);
         }
         return;
     }
 
-    // Pesan bebas -> AI 4 lapis
+    const faqs       = await db.getFaqs(userId);
+    const matchedFaq = faqs.find(f => f.command.toLowerCase() === command);
+    if (matchedFaq) {
+        await sendMessageWTyping(sock, sender, { text: matchedFaq.response }, { quoted: msg });
+        await db.addMessageToHistory(sender, 'user', text);
+        await db.addMessageToHistory(sender, 'assistant', matchedFaq.response);
+        return;
+    }
+
     const userHistory = await db.getHistoryForJid(sender);
-    const reply       = await getAIReply(text, userHistory, customerName);
+    await db.addMessageToHistory(sender, 'user', text);
+    const reply = await getAIReply(text, userHistory, customerName, userId);
     if (reply) {
         await sendMessageWTyping(sock, sender, { text: reply }, { quoted: msg });
         await db.addMessageToHistory(sender, 'assistant', reply);
@@ -363,41 +333,51 @@ const handleMessagesUpsert = (sock) => async ({ messages }) => {
 };
 
 // =================================================================
-// 10. MAIN
+// MAIN — start bot WA
 // =================================================================
+let currentSock = null;
+
 async function startBot() {
     await db.initializeDatabase();
+
     const { state, saveCreds } = await useMultiFileAuthState('./auth_info_baileys');
     const { version }          = await fetchLatestBaileysVersion();
-    logger.info(`Baileys WA v${version.join('.')}`);
+    logger.info(`[WA] Baileys v${version.join('.')}`);
+
+    const isTermux = process.platform === 'android' ||
+                     process.env.PREFIX?.includes('com.termux') ||
+                     process.env.TERMUX_VERSION;
 
     const sock = makeWASocket({
         version,
         auth:    state,
-        // Penyesuaian Termux: Gunakan nama OS yang tepat dan hemat memori
-        browser: process.platform === 'android' ? ['Termux', 'Chrome', '1.0.0'] : Browsers.ubuntu('Chrome'),
+        browser: isTermux ? ['Termux', 'Chrome', '1.0.0'] : Browsers.ubuntu('Chrome'),
         generateHighQualityLinkPreview: false,
         logger:  pino({ level: 'silent' }),
     });
-currentSock = sock;
 
-    sock.ev.on('creds.update',       saveCreds);
-    sock.ev.on('connection.update',  handleConnectionUpdate(sock));
-    sock.ev.on('messages.upsert',    handleMessagesUpsert(sock));
+    currentSock = sock;
 
-    // Deteksi owner mengetik -> pause bot & kirim rangkuman ke Telegram
+    sock.ev.on('creds.update',      saveCreds);
+    sock.ev.on('connection.update', handleConnectionUpdate(sock));
+    sock.ev.on('messages.upsert',   handleMessagesUpsert(sock));
+
     sock.ev.on('presence.update', async ({ id, presences }) => {
-        if (presences[sock.user?.id]?.lastKnownPresence === 'composing') {
+        const myId = sock.user?.id;
+        if (!myId) return;
+        const myNumber = myId.split(':')[0];
+        const isOwner  = Object.keys(presences).some(k => k.includes(myNumber));
+        if (isOwner && presences[myId]?.lastKnownPresence === 'composing') {
             if (!userActivityCache[id] || Date.now() > userActivityCache[id]) {
-                userActivityCache[id] = Date.now() + config.ownerPauseDuration;
-                logger.info(`Owner mengetik ke ${id}. Bot pause 5 menit.`);
+                userActivityCache[id] = Date.now() + TECH.ownerPauseDuration;
+                logger.info(`[PAUSE] Owner mengetik ke ${id}. Bot pause.`);
                 const hist = await db.getHistoryForJid(id);
                 if (hist?.length) {
                     const summ = await summarizeConversation(hist);
                     if (summ) {
                         const { customer } = await db.getOrAddCustomer(id);
                         await sendTelegramNotification(
-                            `*Auto-Pause & Rangkuman*\nPelanggan: \`${id.split('@')[0]}\` (${customer?.name || 'N/A'})\n\n---\n${summ}`
+                            `*📋 Rangkuman Percakapan*\nPelanggan: \`${id.split('@')[0]}\` (${customer?.name || 'N/A'})\n\n${summ}`
                         );
                     }
                 }
@@ -405,7 +385,6 @@ currentSock = sock;
         }
     });
 
-    // Tandai pesan sudah dibaca
     sock.ev.on('messages.update', async (updates) => {
         for (const { key, update } of updates) {
             if (update.receipt?.receiptType === 'read' && !key.fromMe) {
@@ -413,44 +392,187 @@ currentSock = sock;
             }
         }
     });
+
+    return sock;
 }
+
+// =================================================================
+// DASHBOARD API ROUTES
+// =================================================================
+app.use(express.static(path.join(__dirname, 'public')));
+
+const mockAuth = (req, res, next) => { req.user = { id: 'admin' }; next(); };
+
+// Status bot
+app.get('/api/bot-status', (req, res) => {
+    res.json({ success: true, ...botStatus });
+});
+
+// Pairing code
 app.post('/connect', async (req, res) => {
     try {
         const { phone } = req.body;
-
-        if (!phone) {
-            return res.json({ error: "Nomor tidak boleh kosong" });
-        }
-
-        if (!currentSock) {
-            return res.json({ error: "Bot belum siap" });
-        }
-
+        if (!phone)        return res.json({ success: false, error: 'Nomor tidak boleh kosong' });
+        if (!currentSock)  return res.json({ success: false, error: 'Bot belum siap, tunggu beberapa detik' });
         const code = await currentSock.requestPairingCode(phone);
-
-        res.json({
-            success: true,
-            pairing_code: code
-        });
-
+        res.json({ success: true, pairing_code: code });
     } catch (err) {
-        res.json({
-            error: err.message
-        });
+        res.json({ success: false, error: err.message });
     }
 });
 
+// Alias untuk dashboard
+app.post('/api/bot-connect', async (req, res) => {
+    try {
+        const { phone } = req.body;
+        if (!phone)        return res.json({ success: false, error: 'Nomor tidak boleh kosong' });
+        if (!currentSock)  return res.json({ success: false, error: 'Bot belum siap, tunggu beberapa detik' });
+        const code = await currentSock.requestPairingCode(phone);
+        res.json({ success: true, pairing_code: code });
+    } catch (err) {
+        res.json({ success: false, error: err.message });
+    }
+});
+
+// AI Config
+app.get('/api/ai-config', mockAuth, async (req, res) => {
+    try { res.json({ success: true, config: await db.getAIConfig(req.user.id) }); }
+    catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.post('/api/ai-config', mockAuth, async (req, res) => {
+    try { 
+        const config = req.body;
+        await db.updateAIConfig(req.user.id, config); 
+        
+        // Update .env file based on provider
+        if (config.api_key) {
+            updateEnvKey(config.provider, config.api_key);
+        }
+        
+        res.json({ success: true, message: 'Konfigurasi tersimpan' }); 
+    }
+    catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// Products
+app.get('/api/products', mockAuth, async (req, res) => {
+    try { res.json({ success: true, products: await db.getProducts(req.user.id) }); }
+    catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.post('/api/products', mockAuth, async (req, res) => {
+    try { const r = await db.addProduct(req.user.id, req.body); res.json({ success: true, id: r.id, message: 'Produk ditambahkan' }); }
+    catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.put('/api/products/:id', mockAuth, async (req, res) => {
+    try { await db.updateProduct(req.params.id, req.user.id, req.body); res.json({ success: true, message: 'Produk diperbarui' }); }
+    catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.delete('/api/products/:id', mockAuth, async (req, res) => {
+    try { await db.deleteProduct(req.params.id, req.user.id); res.json({ success: true, message: 'Produk dihapus' }); }
+    catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// FAQs
+app.get('/api/faqs', mockAuth, async (req, res) => {
+    try { res.json({ success: true, faqs: await db.getFaqs(req.user.id) }); }
+    catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.post('/api/faqs', mockAuth, async (req, res) => {
+    try { const r = await db.addFaq(req.user.id, req.body); res.json({ success: true, id: r.id, message: 'FAQ ditambahkan' }); }
+    catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.put('/api/faqs/:id', mockAuth, async (req, res) => {
+    try { await db.updateFaq(req.params.id, req.user.id, req.body); res.json({ success: true, message: 'FAQ diperbarui' }); }
+    catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.delete('/api/faqs/:id', mockAuth, async (req, res) => {
+    try { await db.deleteFaq(req.params.id, req.user.id); res.json({ success: true, message: 'FAQ dihapus' }); }
+    catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// Alerts
+app.get('/api/alerts', mockAuth, async (req, res) => {
+    try {
+        const alerts = await db.getSystemAlerts(req.user.id);
+        res.json({ success: true, alerts, unreadCount: alerts.filter(a => a.is_read === 0).length });
+    } catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+app.post('/api/alerts/read', mockAuth, async (req, res) => {
+    try { await db.markAlertsAsRead(req.user.id); res.json({ success: true }); }
+    catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// Fetch models dari provider AI
+app.post('/api/models', mockAuth, async (req, res) => {
+    const { provider, api_key } = req.body;
+    try {
+        let models = [];
+        if (provider === 'groq') {
+            const r = await axios.get('https://api.groq.com/openai/v1/models', { headers: { Authorization: `Bearer ${api_key}` } });
+            models = r.data.data.map(m => m.id);
+        } else if (provider === 'openai') {
+            const r = await axios.get('https://api.openai.com/v1/models', { headers: { Authorization: `Bearer ${api_key}` } });
+            models = r.data.data.map(m => m.id).filter(id => id.includes('gpt'));
+        } else if (provider === 'openrouter') {
+            const r = await axios.get('https://openrouter.ai/api/v1/models');
+            models = r.data.data.map(m => m.id);
+        } else if (provider === 'gemini') {
+            const r = await axios.get(`https://generativelanguage.googleapis.com/v1beta/models?key=${api_key}`);
+            models = r.data.models.map(m => m.name.replace('models/', '')).filter(n => n.includes('gemini'));
+        } else {
+            return res.json({ success: false, error: 'Provider tidak didukung.' });
+        }
+        models.sort();
+        res.json({ success: true, models });
+    } catch (err) {
+        res.status(500).json({ success: false, error: 'Gagal mengambil model. Periksa API Key Anda.' });
+    }
+});
+
+// --- HELPER TO UPDATE .ENV ---
+function updateEnvKey(provider, apiKey) {
+    const envPath = path.resolve(__dirname, '.env');
+    if (!fs.existsSync(envPath)) return;
+
+    let content = fs.readFileSync(envPath, 'utf8');
+    let keyName = '';
+
+    switch (provider) {
+        case 'groq': keyName = 'GROQ_API_KEY'; break;
+        case 'gemini': keyName = 'GEMINI_API_KEY'; break;
+        case 'openai': keyName = 'OPENAI_API_KEY'; break;
+        case 'openrouter': keyName = 'OPENROUTER_API_KEY'; break;
+    }
+
+    if (!keyName) return;
+
+    const regex = new RegExp(`^${keyName}=.*`, 'm');
+    if (regex.test(content)) {
+        content = content.replace(regex, `${keyName}=${apiKey}`);
+    } else {
+        content += `\n${keyName}=${apiKey}`;
+    }
+
+    fs.writeFileSync(envPath, content, 'utf8');
+    process.env[keyName] = apiKey;
+}
+
+// Health check
+app.get('/', (req, res) => res.json({ status: 'ok', bot: botStatus.status }));
+
+// =================================================================
+// START SERVER — satu port untuk semua
+// =================================================================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
-    console.log("Server jalan di port", PORT);
-});
-
-app.get('/', (req, res) => {
-    res.send("Bot aktif 🚀");
+    logger.info('=========================================');
+    logger.info(`🚀 Server berjalan di port ${PORT}`);
+    logger.info(`👉 Dashboard: http://localhost:${PORT}`);
+    logger.info('=========================================');
 });
 
 startBot().catch(err => {
-    logger.fatal({ err }, 'Gagal memulai bot.');
+    logger.fatal('[FATAL] Gagal start bot:', err);
     process.exit(1);
 });
