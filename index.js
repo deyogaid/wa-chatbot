@@ -102,6 +102,8 @@ async function buildDynamicSystemPrompt(userId) {
     const aiConfig = await db.getAIConfig(userId);
     const products = await db.getProducts(userId);
     
+    if (!aiConfig) return "Anda adalah asisten virtual Customer Service.";
+
     const categories = {};
     products.forEach(p => {
         if (!categories[p.kategori]) categories[p.kategori] = [];
