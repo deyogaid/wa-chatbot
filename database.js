@@ -54,8 +54,8 @@ const initializeDatabase = async () => {
             company_social:   '',
             company_maps:     '',
             business_context: '',
-            gas_url:          '',   // Google Apps Script Web App URL
-            gas_sheet_sync:   false // Auto-sync produk dari GAS
+            gas_url:          '',
+            gas_sheet_sync:   false
         });
     }
 
@@ -77,7 +77,6 @@ const updateCustomerName = (phoneNumber, newName) =>
 // === MESSAGE HISTORY ===
 const addMessageToHistory = async (jid, role, content) => {
     const doc = await run(DB.history, 'insert', { jid, role, content, timestamp: new Date().toISOString() });
-    // Batasi 50 pesan per JID
     const all = await run(DB.history, 'find', { jid });
     all.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     if (all.length > 50) {
@@ -98,7 +97,6 @@ const addReadReceipt = async (messageId) => {
     const exists = await run(DB.receipts, 'findOne', { _id: messageId });
     if (exists) return { changes: 0 };
     await run(DB.receipts, 'insert', { _id: messageId, ts: Date.now() });
-    // Batasi 200 entri
     const all = await run(DB.receipts, 'find', {});
     all.sort((a, b) => a.ts - b.ts);
     if (all.length > 200) {
@@ -145,7 +143,8 @@ const addProduct = async (userId, product) => {
         kategori:   product.kategori,
         nama_produk: product.nama_produk,
         harga:      parseInt(product.harga) || 0,
-        keterangan: product.keterangan || ''
+        keterangan: product.keterangan || '',
+        wa_product_id: null
     });
     return { id: doc._id };
 };
@@ -165,7 +164,14 @@ const updateProduct = (id, userId, product) =>
 const deleteProduct = (id, userId) =>
     run(DB.products, 'remove', { _id: id, user_id: userId }, {});
 
-// Upsert produk dari sumber eksternal (GAS Sync)
+const updateWAProductId = (productLocalId, waProductId, userId) => {
+    return run(DB.products, 'update',
+        { _id: productLocalId, user_id: userId },
+        { $set: { wa_product_id: waProductId } },
+        {}
+    );
+};
+
 const upsertProductFromGAS = async (userId, product) => {
     const existing = await run(DB.products, 'findOne', {
         user_id:    userId,
@@ -205,7 +211,6 @@ const addSystemAlert = async (userId, message) => {
     const doc = await run(DB.alerts, 'insert', {
         user_id: userId, message, is_read: false, timestamp: new Date().toISOString()
     });
-    // Batasi 20 alert per user
     const all = await run(DB.alerts, 'find', { user_id: userId });
     all.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
     if (all.length > 20) {
@@ -233,6 +238,7 @@ const markAlertsAsRead = (userId) =>
         { multi: true }
     );
 
+// === EXPORTS ===
 module.exports = {
     initializeDatabase,
     getOrAddCustomer, updateCustomerName,
@@ -240,6 +246,7 @@ module.exports = {
     addReadReceipt, isMessageRead,
     getAIConfig, updateAIConfig,
     getProducts, addProduct, updateProduct, deleteProduct, upsertProductFromGAS,
+    updateWAProductId,
     getFaqs, addFaq, updateFaq, deleteFaq,
     addSystemAlert, getSystemAlerts, markAlertsAsRead,
 };
