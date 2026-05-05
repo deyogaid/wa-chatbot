@@ -75,7 +75,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // --- SAVE AI CONFIG ---
-    document.getElementById('config-form').addEventListener('submit', async (e) => {
+    document.getElementById('ai-config-form').addEventListener('submit', async (e) => {
         e.preventDefault();
         const config = {
             business_name: document.getElementById('business-name').value,
@@ -104,7 +104,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const data = await response.json();
             if (data.success) {
                 showToast('Konfigurasi AI berhasil disimpan!');
-                document.getElementById('brand-headline').textContent = config.business_name;
+                document.getElementById('brand-name').textContent = config.business_name;
             } else {
                 showToast(data.error || 'Gagal menyimpan konfigurasi', true);
             }
@@ -188,7 +188,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // --- LOAD PRODUCTS ---
-    async function loadProducts() {
+    window.loadProducts = async function() {
         const tbody = document.getElementById('product-list');
         tbody.innerHTML = '<tr><td colspan="5" class="text-center">Memuat data...</td></tr>';
         
