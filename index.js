@@ -21,8 +21,6 @@ const {
 const { Boom }               = require('@hapi/boom');
 const pino                   = require('pino');
 const qrcode                 = require('qrcode-terminal');
-const { OpenAI }             = require('openai');
-const { GoogleGenerativeAI } = require('@google/generative-ai');
 const axios                  = require('axios');
 const db                     = require('./database.js');
 const AIFactory              = require('./ai_factory.js');
@@ -39,8 +37,6 @@ const TECH = {
     telegramBotToken:   process.env.TELEGRAM_BOT_TOKEN,
     telegramChatId:     process.env.TELEGRAM_CHAT_ID,
     n8nWebhookUrl:      process.env.N8N_WEBHOOK_URL,
-    groqModels:         ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'gemma2-9b-it'],
-    openrouterModels:   ['meta-llama/llama-3.1-8b-instruct:free', 'google/gemma-2-9b-it:free'],
 };
 
 const logger = pino({ transport: { target: 'pino-pretty' } });
@@ -52,14 +48,21 @@ if (TelegramBot && TECH.telegramBotToken && TECH.telegramChatId) {
 }
 
 const userActivityCache = {};
-const OWNER_NUMBERS = (process.env.OWNER_NUMBERS || '').split(',').map(n => n.trim()).filter(Boolean);
 
 // Status bot — dibaca oleh /api/bot-status
 let botStatus = {
-    status: 'disconnected', // 'connecting' | 'connected' | 'disconnected'
+    status: 'disconnected',
     qr:     null,
     phone:  null,
     since:  null,
+    isBusiness: false,
+};
+
+// Helper: cek apakah socket mendukung fitur bisnis
+const isWABiz = (sock) => {
+    try {
+        return typeof sock.getCatalog === 'function';
+    } catch { return false; }
 };
 
 // =================================================================
@@ -135,7 +138,7 @@ async function getAIReply(userText, history = [], customerName = null, userId = 
         return '⚙️ Sistem AI belum dikonfigurasi. Hubungi admin untuk mengatur API Key di Dashboard.';
     }
     const systemPrompt = await buildDynamicSystemPrompt(userId);
-    const fullConfig   = { ...config, system_prompt: systemPrompt };
+    const fullConfig   = { ...config, system_prompt: systemPrompt, user_id: userId };
     logger.info(`[AI] Menghubungi provider: ${fullConfig.provider}`);
     return AIFactory.generateReply(fullConfig, userText, history, customerName);
 }
@@ -179,10 +182,6 @@ async function sendTelegramNotification(text, imageBuffer = null) {
     }
 }
 
-async function sendMenuWithButtons(sock, jid, greeting, quoted = {}) {
-    await sendMessageWTyping(sock, jid, { text: greeting }, { quoted });
-}
-
 // =================================================================
 // EVENT HANDLERS
 // =================================================================
@@ -205,7 +204,8 @@ const handleConnectionUpdate = (sock) => ({ connection, lastDisconnect, qr }) =>
         botStatus.qr     = null;
         botStatus.since  = new Date().toISOString();
         botStatus.phone  = sock.user?.id?.split(':')[0] || null;
-        logger.info('[WA] ✅ Bot tersambung dan siap!');
+        botStatus.isBusiness = isWABiz(sock);
+        logger.info(`[WA] ✅ Bot tersambung (${botStatus.isBusiness ? 'Business' : 'Regular'})`);
     }
 };
 
@@ -281,11 +281,56 @@ const handleMessagesUpsert = (sock) => async ({ messages }) => {
 
     if (isNew) {
         const businessName = await getBusinessName(userId);
+        let extraBiz = '';
+        try {
+            if (isWABiz(sock)) {
+                const prof = await sock.getBusinessProfile(sock.user?.id);
+                if (prof?.description) extraBiz += `\n📝 ${prof.description}`;
+                if (prof?.address)     extraBiz += `\n📍 ${prof.address}`;
+                if (prof?.email)       extraBiz += `\n📧 ${prof.email}`;
+                if (prof?.website)     extraBiz += `\n🌐 ${prof.website}`;
+            }
+        } catch (e) { /* abaikan */ }
+
         const hour  = parseInt(new Date().toLocaleString('en-US', { timeZone: 'Asia/Jakarta', hour: 'numeric', hour12: false }));
         const greet = hour < 11 ? 'Selamat Pagi' : hour < 15 ? 'Selamat Siang' : hour < 19 ? 'Selamat Sore' : 'Selamat Malam';
-        const welcomeMsg = `${greet} Kak! Selamat datang di *${businessName}* 👋\n\nAda yang bisa kami bantu? Langsung ketik pertanyaan Anda ya!`;
-        await sendMenuWithButtons(sock, sender, welcomeMsg, { quoted: msg });
-        await db.addMessageToHistory(sender, 'assistant', '[Pesan sambutan awal]');
+        const welcomeMsg = `${greet} Kak! Selamat datang di *${businessName}* 👋\n${extraBiz}\nAda yang bisa kami bantu? Ketik *katalog* untuk melihat produk atau langsung tanyakan kebutuhan Anda.`;
+        await sendMessageWTyping(sock, sender, { text: welcomeMsg }, { quoted: msg });
+        await db.addMessageToHistory(sender, 'assistant', '[Pesan sambutan awal dengan info bisnis]');
+        return;
+    }
+
+    // ── KATALOG ──────────────────────────────────────────────────
+    if (command === '/katalog' || command === 'katalog') {
+        const bizOk = isWABiz(sock);
+        if (!bizOk) {
+            const products = await db.getProducts(userId);
+            if (!products.length) {
+                await sendMessageWTyping(sock, sender, { text: '📭 Katalog masih kosong. Admin sedang menyiapkan produk.' }, { quoted: msg });
+            } else {
+                const catMsg = products.map(p => 
+                    `🛍️ *${p.nama_produk}*\n   💰 Rp${Number(p.harga).toLocaleString('id-ID')} ${p.keterangan ? ' – ' + p.keterangan : ''}`
+                ).join('\n\n');
+                await sendMessageWTyping(sock, sender, { text: `*Katalog Produk*\n\n${catMsg}` }, { quoted: msg });
+            }
+            return;
+        }
+
+        try {
+            const catalog = await sock.getCatalog({ jid: sock.user?.id });
+            const products = catalog?.products || [];
+            if (!products.length) {
+                await sendMessageWTyping(sock, sender, { text: '📭 Katalog WhatsApp kosong. Admin sedang memperbarui.' }, { quoted: msg });
+                return;
+            }
+            const lines = products.map(p => 
+                `🛍️ *${p.name}*\n   💰 Rp${Number(p.price?.amount || 0).toLocaleString('id-ID')} ${p.description ? ' – ' + p.description : ''}`
+            ).join('\n\n');
+            await sendMessageWTyping(sock, sender, { text: `*Katalog Produk*\n\n${lines}` }, { quoted: msg });
+        } catch (err) {
+            logger.error('[KATALOG] Gagal ambil:', err);
+            await sendMessageWTyping(sock, sender, { text: '❌ Gagal memuat katalog. Silakan coba lagi.' }, { quoted: msg });
+        }
         return;
     }
 
@@ -371,9 +416,10 @@ async function startBot() {
                     const summ = await summarizeConversation(hist);
                     if (summ) {
                         const { customer } = await db.getOrAddCustomer(id);
-                        await sendTelegramNotification(
-                            `*📋 Rangkuman Percakapan*\nPelanggan: \`${id.split('@')[0]}\` (${customer?.name || 'N/A'})\n\n${summ}`
-                        );
+                        const phone = id.split('@')[0];
+                        const custName = customer?.name || 'N/A';
+                        const notifMsg = `*📋 Rangkuman Percakapan*\nPelanggan: \`${phone}\` (${custName})\n\n${summ}`;
+                        await sendTelegramNotification(notifMsg);
                     }
                 }
             }
@@ -403,20 +449,7 @@ app.get('/api/bot-status', (req, res) => {
     res.json({ success: true, ...botStatus });
 });
 
-// Pairing code
-app.post('/connect', async (req, res) => {
-    try {
-        const { phone } = req.body;
-        if (!phone)        return res.json({ success: false, error: 'Nomor tidak boleh kosong' });
-        if (!currentSock)  return res.json({ success: false, error: 'Bot belum siap, tunggu beberapa detik' });
-        const code = await currentSock.requestPairingCode(phone);
-        res.json({ success: true, pairing_code: code });
-    } catch (err) {
-        res.json({ success: false, error: err.message });
-    }
-});
-
-// Alias untuk dashboard
+// Pairing code (pakai endpoint /api/bot-connect, hapus /connect)
 app.post('/api/bot-connect', async (req, res) => {
     try {
         const { phone } = req.body;
@@ -455,6 +488,97 @@ app.put('/api/products/:id', mockAuth, async (req, res) => {
 app.delete('/api/products/:id', mockAuth, async (req, res) => {
     try { await db.deleteProduct(req.params.id, req.user.id); res.json({ success: true, message: 'Produk dihapus' }); }
     catch (err) { res.status(500).json({ success: false, error: err.message }); }
+});
+
+// Sync products to WA catalog
+app.post('/api/products/sync-catalog', mockAuth, async (req, res) => {
+    try {
+        if (!currentSock || !isWABiz(currentSock)) {
+            return res.json({ success: false, error: 'Fitur ini hanya untuk WhatsApp Business' });
+        }
+        const existingCatalog = await currentSock.getCatalog({ jid: currentSock.user?.id });
+        const existingProducts = existingCatalog?.products || [];
+        for (const p of existingProducts) {
+            try {
+                await currentSock.productDelete(p.id);
+                logger.info(`[SYNC] Hapus produk WA: ${p.name}`);
+            } catch (e) {
+                logger.warn(`[SYNC] Gagal hapus ${p.name}:`, e.message);
+            }
+        }
+        const dbProducts = await db.getProducts(req.user.id);
+        let successCount = 0;
+        for (const prod of dbProducts) {
+            try {
+                const waProduct = {
+                    name: prod.nama_produk,
+                    description: prod.keterangan || '',
+                    price: { amount: Number(prod.harga), currency: 'IDR' },
+                    isHidden: false,
+                };
+                const created = await currentSock.productCreate(waProduct);
+                if (created?.id && prod.id) {
+                    await db.updateWAProductId(prod.id, created.id, req.user.id);
+                }
+                logger.info(`[SYNC] Buat produk WA: ${prod.nama_produk}`);
+                successCount++;
+            } catch (e) {
+                logger.error(`[SYNC] Gagal buat ${prod.nama_produk}:`, e.message);
+            }
+        }
+        botStatus.isBusiness = true;
+        res.json({ success: true, message: `Katalog WA disinkronkan. ${successCount}/${dbProducts.length} produk berhasil.` });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+// Bot profile (get & update)
+app.get('/api/bot-profile', mockAuth, async (req, res) => {
+    try {
+        const data = {
+            name: currentSock?.user?.name || 'Bot',
+            phone: currentSock?.user?.id?.split(':')[0] || null,
+            pictureUrl: null,
+            isBusiness: false,
+            business: null,
+        };
+        if (currentSock) {
+            try {
+                const ppUrl = await currentSock.profilePictureUrl(currentSock.user?.id, 'image');
+                data.pictureUrl = ppUrl;
+            } catch {}
+            if (isWABiz(currentSock)) {
+                data.isBusiness = true;
+                try {
+                    const biz = await currentSock.getBusinessProfile(currentSock.user?.id);
+                    data.business = biz;
+                } catch {}
+            }
+        }
+        res.json({ success: true, profile: data });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
+
+app.post('/api/bot-profile', mockAuth, async (req, res) => {
+    try {
+        if (!currentSock) return res.json({ success: false, error: 'Bot tidak terhubung' });
+        const { profilePicture, status } = req.body;
+        if (profilePicture) {
+            const buffer = Buffer.from(profilePicture, 'base64');
+            await currentSock.updateProfilePicture(currentSock.user?.id, buffer);
+            logger.info('[PROFILE] Foto profil diperbarui');
+        }
+        if (status) {
+            await currentSock.updateProfileStatus(status);
+            logger.info('[PROFILE] Status diperbarui');
+        }
+        res.json({ success: true, message: 'Profil berhasil diperbarui' });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
 });
 
 // FAQs
@@ -518,7 +642,7 @@ app.post('/api/models', mockAuth, async (req, res) => {
 app.get('/', (req, res) => res.json({ status: 'ok', bot: botStatus.status }));
 
 // =================================================================
-// START SERVER — satu port untuk semua
+// START SERVER
 // =================================================================
 const PORT = process.env.PORT || 3000;
 

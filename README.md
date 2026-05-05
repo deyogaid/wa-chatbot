@@ -37,7 +37,7 @@ WhatsApp Chatbot adalah aplikasi otomatis yang menggunakan AI untuk memberikan r
 
 ```bash
 # 1. Clone repository
-git clone https://github.com/dedeyoga/wa-chatbot.git
+git clone https://github.com/deyogaid/wa-chatbot.git
 cd wa-chatbot
 
 # 2. Install dependencies
@@ -50,9 +50,6 @@ cp .env.example .env
 # 4. Jalankan bot
 node index.js
 
-# Atau jalankan dashboard (terminal lain)
-node server.js
-```
 
 Buka browser di `http://localhost:3000` untuk akses dashboard.
 
@@ -91,7 +88,7 @@ npm --version
 
 ```bash
 # Clone repository
-git clone https://github.com/dedeyoga/wa-chatbot.git
+git clone https://github.com/deyogaid/wa-chatbot.git
 cd wa-chatbot
 
 # Install dependencies dengan setup khusus Termux

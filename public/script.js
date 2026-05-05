@@ -317,254 +317,87 @@ document.addEventListener('DOMContentLoaded', () => {
             tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Gagal memuat daftar harga.</td></tr>';
         }
     }
-
-    // --- PRODUCT MODAL LOGIC ---
-    const modal = document.getElementById('product-modal');
-    const closeBtns = document.querySelectorAll('.close-modal');
-    
-    document.getElementById('btn-add-product').addEventListener('click', () => {
-        document.getElementById('product-form').reset();
-        document.getElementById('product-id').value = '';
-        document.getElementById('modal-title').textContent = 'Tambah Produk';
-        modal.classList.add('active');
+    base64Img = await new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result.split(',')[1]);
+      reader.readAsDataURL(file);
     });
+  }
 
-    closeBtns.forEach(btn => {
-        btn.addEventListener('click', () => {
-            modal.classList.remove('active');
-        });
-    });
+  const status = $('pp-status').value.trim();
+  const payload = {};
+  if (base64Img) payload.profilePicture = base64Img;
+  if (status) payload.status = status;
 
-    // Handle Form Submit (Add/Update)
-    document.getElementById('product-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        
-        const id = document.getElementById('product-id').value;
-        const product = {
-            kategori: document.getElementById('product-category').value,
-            nama_produk: document.getElementById('product-name').value,
-            harga: parseInt(document.getElementById('product-price').value),
-            keterangan: document.getElementById('product-desc').value
-        };
+  if (!base64Img && !status) {
+    toast('Isi foto atau status terlebih dahulu', 'err');
+    return;
+  }
 
-        const method = id ? 'PUT' : 'POST';
-        const url = id ? `/api/products/${id}` : '/api/products';
+  const d = await api('/api/bot-profile', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  });
+  if (d.success) {
+    toast('Profil berhasil diperbarui', 'ok');
+    fileInput.value = '';
+    $('pp-status').value = '';
+    loadProfile();
+  } else {
+    toast(d.error || 'Gagal memperbarui profil', 'err');
+  }
+}
 
-        try {
-            const response = await fetch(url, {
-                method: method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(product)
-            });
-            const data = await response.json();
-            
-            if (data.success) {
-                showToast(id ? 'Produk diperbarui' : 'Produk ditambahkan');
-                modal.classList.remove('active');
-                loadProducts();
-            } else {
-                showToast(data.error || 'Gagal menyimpan', true);
-            }
-        } catch (err) {
-            showToast('Terjadi kesalahan jaringan', true);
-        }
-    });
+// ── SYNC CATALOG ─────────────────────────────────────────
+async function syncToWACatalog() {
+  if (!confirm('Ini akan menghapus SEMUA produk di katalog WhatsApp dan menggantinya dengan produk dari Dashboard. Lanjutkan?')) return;
 
-    // Global Functions for inline onclick handlers
-    window.editProduct = (id, cat, name, price, desc) => {
-        document.getElementById('product-id').value = id;
-        document.getElementById('product-category').value = cat;
-        document.getElementById('product-name').value = name;
-        document.getElementById('product-price').value = price;
-        document.getElementById('product-desc').value = desc === 'null' ? '' : desc;
-        
-        document.getElementById('modal-title').textContent = 'Edit Produk';
-        modal.classList.add('active');
-    };
+  const syncBtn = document.querySelector('#sync-btns .btn');
+  const origText = syncBtn.innerHTML;
+  syncBtn.innerHTML = '<span class="spinner"></span> Menyinkronkan...';
+  syncBtn.disabled = true;
 
-    window.deleteProduct = async (id) => {
-        if (!confirm('Apakah Anda yakin ingin menghapus produk ini?')) return;
-        
-        try {
-            const response = await fetch(`/api/products/${id}`, { method: 'DELETE' });
-            const data = await response.json();
-            if (data.success) {
-                showToast('Produk dihapus');
-                loadProducts();
-            } else {
-                showToast(data.error, true);
-            }
-        } catch (err) {
-            showToast('Gagal menghapus produk', true);
-        }
-    };
+  const d = await api('/api/products/sync-catalog', { method: 'POST' });
+  syncBtn.innerHTML = origText;
+  syncBtn.disabled = false;
 
-    // Panggil fungsi awal
-    loadAIConfig();
+  if (d.success) {
+    toast(d.message || 'Katalog WhatsApp disinkronkan!', 'ok');
+    $('sync-last').textContent = 'Terakhir: ' + new Date().toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
     loadProducts();
-    loadFaqs();
-    fetchAlerts();
-    
-    // Polling untuk notifikasi setiap 10 detik
-    setInterval(fetchAlerts, 10000);
+  } else {
+    toast(d.error || 'Gagal sinkronisasi', 'err');
+  }
+}
 
-    // --- SYSTEM ALERTS ---
-    const bellIcon = document.getElementById('notification-bell');
-    const dropdown = document.getElementById('notification-dropdown');
-    const badge = document.getElementById('notification-badge');
-    const alertList = document.getElementById('notification-list');
-    const btnRead = document.getElementById('btn-read-alerts');
-
-    bellIcon.addEventListener('click', (e) => {
-        // Toggle dropdown if clicked on the bell wrapper (but not inner buttons)
-        if (e.target.closest('#btn-read-alerts')) return;
-        dropdown.style.display = dropdown.style.display === 'none' ? 'flex' : 'none';
-    });
-
-    document.addEventListener('click', (e) => {
-        if (!e.target.closest('#notification-bell')) {
-            dropdown.style.display = 'none';
-        }
-    });
-
-    async function fetchAlerts() {
-        try {
-            const response = await fetch('/api/alerts');
-            const data = await response.json();
-            if (data.success) {
-                if (data.unreadCount > 0) {
-                    badge.style.display = 'block';
-                    badge.textContent = data.unreadCount > 9 ? '9+' : data.unreadCount;
-                } else {
-                    badge.style.display = 'none';
-                }
-
-                alertList.innerHTML = '';
-                if (data.alerts.length === 0) {
-                    alertList.innerHTML = '<div class="empty-state" style="padding: 20px; text-align: center; color: var(--text-muted); font-size: 0.85rem;">Semua sistem normal.</div>';
-                } else {
-                    data.alerts.forEach(alert => {
-                        const date = new Date(alert.timestamp).toLocaleString('id-ID');
-                        const div = document.createElement('div');
-                        div.className = `alert-item ${alert.is_read ? '' : 'unread'}`;
-                        div.innerHTML = `
-                            <p>${alert.message}</p>
-                            <small>${date}</small>
-                        `;
-                        alertList.appendChild(div);
-                    });
-                }
-            }
-        } catch (err) {
-            console.error("Gagal mengambil notifikasi", err);
-        }
+function checkBizStatus() {
+  api('/api/bot-status').then(d => {
+    if (d.isBusiness) {
+      $('sync-btns').style.display = 'flex';
+    } else {
+      $('sync-btns').style.display = 'none';
     }
+  });
+}
 
-    btnRead.addEventListener('click', async () => {
-        try {
-            const response = await fetch('/api/alerts/read', { method: 'POST' });
-            const data = await response.json();
-            if (data.success) {
-                badge.style.display = 'none';
-                fetchAlerts();
-            }
-        } catch (err) {
-            console.error("Gagal menandai notifikasi", err);
-        }
-    });
+// Override loadProducts untuk memanggil checkBiz
+const origLoadProducts = loadProducts;
+loadProducts = async function() {
+  await origLoadProducts();
+  checkBizStatus();
+};
 
-    // --- FAQS CRUD ---
-    async function loadFaqs() {
-        const tbody = document.getElementById('faq-list');
-        try {
-            const response = await fetch('/api/faqs');
-            const data = await response.json();
-            if (data.success) {
-                tbody.innerHTML = '';
-                if (data.faqs.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="3" style="text-align: center;">Belum ada Balasan Cepat</td></tr>';
-                    return;
-                }
-                data.faqs.forEach(faq => {
-                    const tr = document.createElement('tr');
-                    tr.innerHTML = `
-                        <td><strong>${faq.command}</strong></td>
-                        <td style="white-space: pre-wrap; font-size: 0.9em; max-width: 300px;">${faq.response}</td>
-                        <td>
-                            <div style="display: flex; gap: 5px;">
-                                <button class="btn btn-sm btn-secondary btn-edit-faq" data-id="${faq.id}" data-faq='${JSON.stringify(faq).replace(/'/g, "&#39;")}'>Edit</button>
-                                <button class="btn btn-sm btn-danger btn-delete-faq" data-id="${faq.id}">Hapus</button>
-                            </div>
-                        </td>
-                    `;
-                    tbody.appendChild(tr);
-                });
+const origLoadDashboard = loadDashboard;
+loadDashboard = async function() {
+  await origLoadDashboard();
+  checkBizStatus();
+};
 
-                document.querySelectorAll('.btn-edit-faq').forEach(btn => {
-                    btn.addEventListener('click', (e) => {
-                        const faq = JSON.parse(e.target.getAttribute('data-faq'));
-                        document.getElementById('faq-id').value = faq.id;
-                        document.getElementById('faq-command').value = faq.command;
-                        document.getElementById('faq-response').value = faq.response;
-                        document.getElementById('faq-modal-title').textContent = 'Edit Balasan Cepat';
-                        document.getElementById('faq-modal').classList.add('show');
-                    });
-                });
+// ── AUTO REFRESH ─────────────────────────────────────────
+setInterval(()=>{
+  if($('tab-dashboard').classList.contains('active')) loadBotStatus();
+},10000);
 
-                document.querySelectorAll('.btn-delete-faq').forEach(btn => {
-                    btn.addEventListener('click', async (e) => {
-                        if (confirm('Yakin ingin menghapus Balasan Cepat ini?')) {
-                            const id = e.target.getAttribute('data-id');
-                            await fetch(`/api/faqs/${id}`, { method: 'DELETE' });
-                            showToast('Balasan Cepat dihapus');
-                            loadFaqs();
-                        }
-                    });
-                });
-            }
-        } catch (err) {
-            tbody.innerHTML = '<tr><td colspan="3" style="text-align: center; color: red;">Gagal memuat data</td></tr>';
-        }
-    }
-
-    document.getElementById('faq-form').addEventListener('submit', async (e) => {
-        e.preventDefault();
-        const id = document.getElementById('faq-id').value;
-        const faqData = {
-            command: document.getElementById('faq-command').value,
-            response: document.getElementById('faq-response').value
-        };
-
-        const method = id ? 'PUT' : 'POST';
-        const url = id ? `/api/faqs/${id}` : '/api/faqs';
-
-        try {
-            const response = await fetch(url, {
-                method,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(faqData)
-            });
-            const data = await response.json();
-            if (data.success) {
-                showToast(id ? 'FAQ diperbarui' : 'FAQ ditambahkan');
-                closeFaqModal();
-                loadFaqs();
-            } else {
-                showToast(data.error || 'Gagal menyimpan', true);
-            }
-        } catch (err) {
-            showToast('Kesalahan jaringan', true);
-        }
-    });
-
-    window.showFaqModal = () => {
-        document.getElementById('faq-id').value = '';
-        document.getElementById('faq-form').reset();
-        document.getElementById('faq-modal-title').textContent = 'Tambah Balasan Cepat';
-        document.getElementById('faq-modal').classList.add('show');
-    };
-
-    window.closeFaqModal = () => {
-        document.getElementById('faq-modal').classList.remove('show');
-    };
-});
+// ── INIT ─────────────────────────────────────────────────
+nav('dashboard');
