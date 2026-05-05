@@ -16,9 +16,7 @@ const {
     useMultiFileAuthState,
     DisconnectReason,
     Browsers,
-    fetchLatestBaileysVersion,
-    delay,
-    downloadMediaMessage
+    fetchLatestBaileysVersion
 } = require('@whiskeysockets/baileys');
 const { Boom }               = require('@hapi/boom');
 const pino                   = require('pino');
