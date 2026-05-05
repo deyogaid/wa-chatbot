@@ -1,398 +1,321 @@
-'use strict';
+document.addEventListener('DOMContentLoaded', () => {
+    // --- TAB SWITCHING ---
+    const navItems = document.querySelectorAll('.nav-item');
+    const tabPanes = document.querySelectorAll('.tab-pane');
 
-// ── HELPERS ──────────────────────────────────────────────
-const $ = id => document.getElementById(id);
-const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-const fmt = n => Number(n||0).toLocaleString('id-ID');
+    navItems.forEach(item => {
+        item.addEventListener('click', (e) => {
+            e.preventDefault();
+            const targetId = item.getAttribute('data-tab');
 
-let _toastT;
-function toast(msg, type='ok'){
-  const el=$('toast'); el.textContent=msg;
-  el.className='toast show '+type;
-  clearTimeout(_toastT);
-  _toastT=setTimeout(()=>el.className='toast',2800);
-}
+            // Update nav active state
+            navItems.forEach(nav => nav.classList.remove('active'));
+            item.classList.add('active');
 
-async function api(url, opts={}, ms=6000){
-  const ctrl=new AbortController();
-  const tid=setTimeout(()=>ctrl.abort(),ms);
-  try{
-    const r=await fetch(url,{signal:ctrl.signal,...opts});
-    clearTimeout(tid);
-    return await r.json();
-  }catch(e){
-    clearTimeout(tid);
-    return{success:false,error:e.name==='AbortError'?'Timeout':e.message};
-  }
-}
+            // Update tab panes
+            tabPanes.forEach(pane => {
+                if (pane.id === targetId) {
+                    pane.classList.add('active');
+                } else {
+                    pane.classList.remove('active');
+                }
+            });
+        });
+    });
 
-function show(id){ $(id).style.display='block' }
-function hide(id){ $(id).style.display='none' }
-function showFlex(id){ $(id).style.display='flex' }
-
-// ── NAVIGATION ──────────────────────────────────────────
-function nav(tab){
-  document.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-  const panel=$('tab-'+tab);
-  if(panel) panel.classList.add('active');
-
-  document.querySelectorAll('.nav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
-  document.querySelectorAll('.bnav-btn').forEach(b=>b.classList.toggle('active',b.dataset.tab===tab));
-
-  window.scrollTo(0,0);
-
-  if(tab==='dashboard') loadDashboard();
-  if(tab==='config')    loadConfig();
-  if(tab==='products')  loadProducts();
-  if(tab==='faqs')      loadFaqs();
-  if(tab==='profile')   loadProfile();
-}
-
-// ── DASHBOARD ────────────────────────────────────────────
-let _prevBotStatus = '';
-async function loadDashboard(){
-  await Promise.all([loadBotStatus(), loadAlerts(), loadCounts()]);
-}
-
-async function loadBotStatus(){
-  const d=await api('/api/bot-status',{},3000);
-  if(d.success){
-    if(d.status !== _prevBotStatus){
-      _prevBotStatus = d.status;
-      if(d.status === 'connected'){
-        toast('✅ Bot terhubung ke WhatsApp!', 'ok');
-      }
+    // --- TOAST NOTIFICATION ---
+    function showToast(message, isError = false) {
+        const toast = document.getElementById('toast');
+        toast.textContent = message;
+        if (isError) {
+            toast.classList.add('error');
+        } else {
+            toast.classList.remove('error');
+        }
+        
+        toast.classList.add('show');
+        setTimeout(() => {
+            toast.classList.remove('show');
+        }, 3000);
     }
-    renderBot(d);
-  }
-}
 
-function renderBot(d){
-  const st=d.status||'disconnected';
-  hide('wa-conn'); hide('wa-cing'); hide('wa-disc');
-  if(st==='connected')    show('wa-conn');
-  else if(st==='connecting') show('wa-cing');
-  else                    show('wa-disc');
+    // --- LOAD AI CONFIG ---
+    async function loadAIConfig() {
+        try {
+            const response = await fetch('/api/ai-config');
+            const data = await response.json();
+            if (data.success && data.config) {
+                document.getElementById('business-name').value = data.config.business_name || '';
+                document.getElementById('ai-provider').value = data.config.provider || 'groq';
+                document.getElementById('api-key').value = data.config.api_key || '';
+                
+                const modelSelect = document.getElementById('model-name');
+                const savedModel = data.config.model_name || data.config.model || 'llama-3.3-70b-versatile';
+                // Masukkan model tersimpan sebagai opsi awal
+                modelSelect.innerHTML = `<option value="${savedModel}">${savedModel}</option>`;
+                modelSelect.value = savedModel;
+                
+                // Otomatis sinkronisasi model saat load (menggunakan savedModel)
+                if (data.config.api_key || data.config.provider === 'openrouter') {
+                    // Karena ini di awal, kita beri sedikit delay agar UI stabil
+                    setTimeout(() => syncModels(savedModel), 500);
+                }
+                
+                document.getElementById('system-prompt').value = data.config.system_prompt || '';
+                
+                // Profil Perusahaan
+                document.getElementById('company-email').value = data.config.company_email || '';
+                document.getElementById('company-address').value = data.config.company_address || '';
+                document.getElementById('company-social').value = data.config.company_social || '';
+                document.getElementById('company-maps').value = data.config.company_maps || '';
+                document.getElementById('business-context').value = data.config.business_context || '';
+                document.getElementById('gas-url').value = data.config.gas_url || '';
 
-  const badge=$('wa-badge');
-  const sEl=$('s-status'), since=$('s-since'), phone=$('wa-phone');
+                // Update brand headline
+                if (data.config.business_name) {
+                    document.getElementById('brand-name').innerText = data.config.business_name;
+                }
+            }
+        } catch (err) {
+            showToast('Gagal memuat konfigurasi AI', true);
+        }
+    }
 
-  if(st==='connected'){
-    badge.className='badge badge-green';
-    badge.innerHTML='<span class="dot pulse"></span>Connected';
-    sEl.textContent='✅'; sEl.style.color='var(--green)';
-    phone.textContent=d.phone?'+'+d.phone:'Terhubung';
-    since.textContent=d.since?'Sejak '+new Date(d.since).toLocaleTimeString('id-ID',{hour:'2-digit',minute:'2-digit'}):'Aktif';
-    document.querySelector('#wa-conn .alert-box').style.display='flex';
-  }else if(st==='connecting'){
-    badge.className='badge badge-yellow';
-    badge.innerHTML='<span class="dot pulse"></span>Connecting';
-    sEl.textContent='⏳'; sEl.style.color='var(--yellow)';
-    phone.textContent='Menghubungkan...'; since.textContent='Sedang proses...';
-  }else{
-    badge.className='badge badge-red';
-    badge.innerHTML='<span class="dot"></span>Disconnected';
-    sEl.textContent='✗'; sEl.style.color='var(--red)';
-    phone.textContent='Belum terhubung'; since.textContent='Bot tidak aktif';
-  }
-}
+    // --- SAVE AI CONFIG ---
+    document.getElementById('ai-config-form').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const config = {
+            business_name: document.getElementById('business-name').value,
+            provider: document.getElementById('ai-provider').value,
+            api_key: document.getElementById('api-key').value,
+            model_name: document.getElementById('model-name').value,
+            system_prompt: document.getElementById('system-prompt').value,
+            company_email: document.getElementById('company-email').value,
+            company_address: document.getElementById('company-address').value,
+            company_social: document.getElementById('company-social').value,
+            company_maps: document.getElementById('company-maps').value,
+            business_context: document.getElementById('business-context').value,
+            gas_url: document.getElementById('gas-url').value
+        };
 
-async function loadCounts(){
-  const [pr,fq]=await Promise.all([api('/api/products',{},3000),api('/api/faqs',{},3000)]);
-  $('s-products').textContent=pr.products?.length??'—';
-  $('s-faqs').textContent=fq.faqs?.length??'—';
-}
+        const btn = document.getElementById('btn-save-config');
+        const originalText = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Menyimpan...';
+        btn.disabled = true;
 
-function parseAlert(raw){
-  const o={provider:null,model:null,waktu:null,status:null,tindakan:null,error:null};
-  (raw||'').split('\n').forEach(l=>{
-    const i=l.indexOf(':'); if(i<0) return;
-    const k=l.slice(0,i).trim().toLowerCase();
-    const v=l.slice(i+1).trim();
-    if(k==='provider') o.provider=v;
-    else if(k==='model')    o.model=v;
-    else if(k==='waktu')    o.waktu=v;
-    else if(k==='status')   o.status=v;
-    else if(k==='tindakan') o.tindakan=v;
-    else if(k==='error')    o.error=v;
-  });
-  return o;
-}
+        try {
+            const response = await fetch('/api/ai-config', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(config)
+            });
+            const data = await response.json();
+            if (data.success) {
+                showToast('Konfigurasi AI berhasil disimpan!');
+                document.getElementById('brand-name').textContent = config.business_name;
+            } else {
+                showToast(data.error || 'Gagal menyimpan konfigurasi', true);
+            }
+        } catch (err) {
+            showToast('Terjadi kesalahan jaringan', true);
+        } finally {
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+            lucide.createIcons();
+        }
+    });
 
-function renderAlertCard(a){
-  const isNew=a.is_read===0;
-  const p=parseAlert(a.message||'');
-  const isStructured=!!(p.provider||p.status||p.tindakan);
-  const ts=a.timestamp?new Date(a.timestamp).toLocaleString('id-ID',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}):'';
+    document.getElementById('profile-form').addEventListener('submit', (e) => {
+        e.preventDefault();
+        // Memicu submit config-form karena datanya disimpan bersamaan di ai_configs
+        document.getElementById('btn-save-config').click();
+    });
 
-  if(isStructured){
-    const st=p.status||'';
-    const isErr=st.includes('401')||st.includes('402')||st.includes('403');
-    const isWarn=st.includes('429')||st.includes('503')||st.includes('500');
-    const borderC=isErr?'var(--red)':isWarn?'var(--yellow)':'var(--muted)';
-    const bgC=isErr?'rgba(248,81,73,.06)':isWarn?'rgba(210,153,34,.06)':'rgba(88,166,255,.06)';
+    // --- GAS LOGIC ---
+    document.getElementById('btn-test-gas').addEventListener('click', async () => {
+        const gasUrl = document.getElementById('gas-url').value;
+        if (!gasUrl) return showToast('Harap isi URL GAS terlebih dahulu', true);
+        
+        const btn = document.getElementById('btn-test-gas');
+        const statusDiv = document.getElementById('gas-status');
+        btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Testing...';
+        btn.disabled = true;
+        
+        try {
+            const response = await fetch('/api/gas/test', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ gas_url: gasUrl })
+            });
+            const data = await response.json();
+            if (data.success) {
+                statusDiv.innerHTML = `<span style="color: green;">✅ ${data.message}</span>`;
+                showToast('Koneksi GAS Berhasil!');
+            } else {
+                statusDiv.innerHTML = `<span style="color: red;">❌ ${data.error}</span>`;
+                showToast('Koneksi GAS Gagal', true);
+            }
+        } catch (err) {
+            statusDiv.innerHTML = `<span style="color: red;">❌ Terjadi kesalahan jaringan.</span>`;
+        } finally {
+            btn.innerHTML = '<i data-lucide="plug"></i> Test Connection';
+            btn.disabled = false;
+            lucide.createIcons();
+        }
+    });
 
-    return `<div style="border-left:3px solid ${borderC};background:${bgC};margin:10px 12px;border-radius:0 8px 8px 0;padding:12px 14px;${isNew?'':'opacity:.65'}">
-      <div class="flex items-center justify-between" style="flex-wrap:wrap;gap:6px;margin-bottom:8px">
-        <div class="flex items-center gap-8" style="flex-wrap:wrap">
-          ${p.provider?`<span style="background:var(--bg3);border-radius:5px;padding:2px 8px;font-size:11px;font-weight:600;color:var(--text)">${esc(p.provider)}</span>`:''}
-          ${p.model?`<span style="font-family:'DM Mono',monospace;font-size:11px;color:var(--blue);background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:2px 8px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;display:inline-block">${esc(p.model)}</span>`:''}
-          ${isNew?'<span style="background:var(--red);color:#fff;font-size:10px;font-weight:700;padding:1px 7px;border-radius:100px">BARU</span>':''}
-        </div>
-        <span class="text-xs text-muted">${ts}</span>
-      </div>
-      ${p.status?`<div style="font-size:13px;font-weight:600;color:${borderC};margin-bottom:6px">${esc(p.status)}</div>`:''}
-      ${p.error?`<div style="font-size:12px;color:var(--muted);font-family:'DM Mono',monospace;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;margin-bottom:8px;word-break:break-all">${esc(p.error)}</div>`:''}
-      ${p.tindakan?`<div style="font-size:12px;color:var(--green);display:flex;gap:6px;align-items:flex-start"><span style="flex-shrink:0">→</span><span>${esc(p.tindakan)}</span></div>`:''}
-    </div>`;
-  }
+    document.getElementById('btn-sync-gas').addEventListener('click', async () => {
+        const gasUrl = document.getElementById('gas-url').value;
+        if (!gasUrl) return showToast('Harap isi URL GAS terlebih dahulu', true);
 
-  return `<div class="flex items-start gap-8" style="padding:12px 16px;border-bottom:1px solid var(--bg3);${isNew?'':'opacity:.65'}">
-    <div style="width:7px;height:7px;border-radius:50%;background:var(--muted);margin-top:5px;flex-shrink:0"></div>
-    <div class="flex-1">
-      <div style="font-size:13px;${isNew?'font-weight:600':'color:var(--muted)'};white-space:pre-wrap">${esc(a.message||'—')}</div>
-      <div class="text-xs text-muted mt-4">${ts}</div>
-    </div>
-  </div>`;
-}
+        // Simpan konfigurasi dulu agar gas_url di database terupdate
+        document.getElementById('btn-save-config').click();
 
-async function loadAlerts(){
-  const d=await api('/api/alerts',{},3000);
-  const body=$('alerts-body');
-  $('s-alerts').textContent=d.unreadCount??0;
-  if((d.unreadCount??0)>0) show('read-btn'); else hide('read-btn');
+        const btn = document.getElementById('btn-sync-gas');
+        const statusDiv = document.getElementById('gas-status');
+        btn.innerHTML = '<i data-lucide="loader" class="spin"></i> Syncing...';
+        btn.disabled = true;
+        
+        try {
+            // Tunggu sedikit agar proses save sebelumnya (yang async) bisa selesai
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            const response = await fetch('/api/gas/sync-products', { method: 'POST' });
+            const data = await response.json();
+            
+            if (data.success) {
+                statusDiv.innerHTML = `<span style="color: green;">✅ Sync berhasil: ${data.synced} produk disinkronkan, ${data.errors} gagal.</span>`;
+                showToast(`Sync berhasil! (${data.synced} produk)`);
+                loadProducts(); // Muat ulang tabel pricelist
+            } else {
+                statusDiv.innerHTML = `<span style="color: red;">❌ Gagal: ${data.error}</span>`;
+                showToast('Gagal sinkronisasi produk', true);
+            }
+        } catch (err) {
+            statusDiv.innerHTML = `<span style="color: red;">❌ Terjadi kesalahan jaringan atau timeout.</span>`;
+        } finally {
+            btn.innerHTML = '<i data-lucide="download-cloud"></i> Sync Products Now';
+            btn.disabled = false;
+            lucide.createIcons();
+        }
+    });
 
-  if(!d.alerts?.length){
-    body.innerHTML='<div class="dempty">Tidak ada notifikasi</div>'; return;
-  }
-  body.innerHTML=d.alerts.map(a=>renderAlertCard(a)).join('');
-}
+    // --- SYNC MODELS ---
+    async function syncModels(savedModelToSelect = null) {
+        const provider = document.getElementById('ai-provider').value;
+        const apiKey = document.getElementById('api-key').value;
+        const btn = document.getElementById('btn-sync-models');
+        const modelSelect = document.getElementById('model-name');
+        const helpText = document.getElementById('model-help-text');
 
-async function markRead(){
-  await api('/api/alerts/read',{method:'POST'});
-  hide('read-btn'); $('s-alerts').textContent='0'; loadAlerts();
-}
+        if (!apiKey && provider !== 'openrouter') {
+            showToast('API Key diperlukan untuk melihat model.', true);
+            return;
+        }
 
-async function getPairingCode(){
-  const phone=$('phone-inp').value.trim();
-  if(!phone){toast('Masukkan nomor WhatsApp','err');return;}
-  hide('pair-txt'); show('pair-ld'); $('pair-btn').disabled=true;
-  const d=await api('/api/bot-connect',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({phone})},15000);
-  show('pair-txt'); hide('pair-ld'); $('pair-btn').disabled=false;
-  if(d.success&&d.pairing_code){
-    show('pair-result'); $('pair-code').textContent=d.pairing_code; toast('Kode berhasil dibuat!');
-  }else toast(d.error||'Gagal mendapat kode','err');
-}
+        btn.disabled = true;
+        const originalBtnText = btn.innerHTML;
+        btn.innerHTML = '<i data-lucide="loader" class="spin" style="width:12px; height:12px;"></i> Loading...';
+        helpText.textContent = "Mengambil daftar model...";
 
-// ── AI CONFIG ────────────────────────────────────────────
-async function loadConfig(){
-  const d=await api('/api/ai-config'); const c=d.config||{};
-  $('c-prov').value   = c.provider        ||'gemini';
-  $('c-key').value    = c.api_key         ||'';
-  $('c-name').value   = c.business_name   ||'';
-  $('c-email').value  = c.company_email   ||'';
-  $('c-addr').value   = c.company_address ||'';
-  $('c-social').value = c.company_social  ||'';
-  $('c-maps').value   = c.company_maps    ||'';
-  $('c-ctx').value    = c.business_context||'';
-  $('c-prompt').value = c.system_prompt   ||'';
-  if(c.model){
-    const sel=$('c-model');
-    if(![...sel.options].some(o=>o.value===c.model))
-      sel.innerHTML+=`<option value="${esc(c.model)}">${esc(c.model)}</option>`;
-    sel.value=c.model;
-  }
-}
+        try {
+            const response = await fetch('/api/models', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ provider, api_key: apiKey })
+            });
+            const data = await response.json();
+            
+            if (data.success) {
+                modelSelect.innerHTML = '';
+                if (data.models.length === 0) {
+                    modelSelect.innerHTML = '<option value="">Tidak ada model ditemukan</option>';
+                } else {
+                    data.models.forEach(model => {
+                        const option = document.createElement('option');
+                        option.value = model;
+                        option.textContent = model;
+                        modelSelect.appendChild(option);
+                    });
+                    
+                    // Jika ada parameter savedModelToSelect, set itu sebagai yang dipilih
+                    if (typeof savedModelToSelect === 'string' && data.models.includes(savedModelToSelect)) {
+                        modelSelect.value = savedModelToSelect;
+                    }
+                }
+                helpText.textContent = `${data.models.length} model berhasil dimuat.`;
+                showToast('Daftar model berhasil disinkronisasi');
+            } else {
+                showToast(data.error || 'Gagal sinkronisasi model', true);
+                helpText.textContent = "Gagal mengambil daftar model.";
+            }
+        } catch (err) {
+            showToast('Terjadi kesalahan jaringan', true);
+            helpText.textContent = "Gagal menghubungi server.";
+        } finally {
+            btn.disabled = false;
+            btn.innerHTML = originalBtnText;
+            lucide.createIcons();
+        }
+    }
 
-function onProviderChange(){
-  $('c-model').innerHTML='<option value="">— pilih model —</option>';
-}
+    document.getElementById('btn-sync-models').addEventListener('click', () => syncModels());
 
-async function fetchModels(){
-  const prov=$('c-prov').value, key=$('c-key').value.trim();
-  hide('fetch-txt'); show('fetch-ld'); $('fetch-btn').disabled=true;
-  const d=await api('/api/models',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({provider:prov,api_key:key})},12000);
-  show('fetch-txt'); hide('fetch-ld'); $('fetch-btn').disabled=false;
-  if(d.success&&d.models?.length){
-    $('c-model').innerHTML=d.models.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join('');
-    toast(`${d.models.length} model ditemukan`, 'info');
-  }else toast(d.error||'Gagal mengambil model','err');
-}
+    // Auto-sync ketika provider berubah (bila API Key sudah ada)
+    document.getElementById('ai-provider').addEventListener('change', () => {
+        const apiKey = document.getElementById('api-key').value;
+        if (apiKey || document.getElementById('ai-provider').value === 'openrouter') {
+            syncModels();
+        }
+    });
 
-async function saveConfig(){
-  const payload={
-    provider:$('c-prov').value, api_key:$('c-key').value,
-    model:$('c-model').value,
-    business_name:$('c-name').value, company_email:$('c-email').value,
-    company_address:$('c-addr').value, company_social:$('c-social').value,
-    company_maps:$('c-maps').value, business_context:$('c-ctx').value,
-    system_prompt:$('c-prompt').value,
-  };
-  const d=await api('/api/ai-config',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
-  if(d.success){
-    toast('Konfigurasi tersimpan!', 'ok');
-  } else {
-    toast(d.error||'Gagal menyimpan konfigurasi','err');
-  }
-}
+    // Auto-sync ketika user selesai memasukkan API Key
+    document.getElementById('api-key').addEventListener('blur', () => {
+        const apiKey = document.getElementById('api-key').value;
+        if (apiKey) {
+            syncModels();
+        }
+    });
 
-// ── PRODUCTS ─────────────────────────────────────────────
-let _prods=[];
-
-async function loadProducts(){
-  $('products-tbl').innerHTML='<div class="dempty">Memuat...</div>';
-  const d=await api('/api/products'); _prods=d.products||[]; renderProds();
-}
-
-function renderProds(){
-  if(!_prods.length){$('products-tbl').innerHTML='<div class="dempty">Belum ada produk. Ketuk "+ Tambah" untuk mulai.</div>';return;}
-  $('products-tbl').innerHTML=_prods.map(p=>{
-    const id=p._id||p.id;
-    return`<div class="drow">
-      <div class="flex-1" style="min-width:0">
-        <div class="fw6 truncate" style="font-size:14px">${esc(p.nama_produk||p.name||'—')}</div>
-        <div class="text-xs text-muted mt-4">${esc(p.kategori||p.category||'Umum')}${p.keterangan||p.notes?' · '+esc(p.keterangan||p.notes):''}</div>
-      </div>
-      <div style="color:var(--green);font-weight:600;font-size:13px;white-space:nowrap;padding:0 8px">Rp${fmt(p.harga||p.price)}</div>
-      <div class="flex gap-6">
-        <button class="btn btn-ghost btn-sm" onclick="editProd('${id}')">Edit</button>
-        <button class="btn btn-danger btn-sm" onclick="delProd('${id}')">✕</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function openModal(type){
-  if(type==='p'){
-    $('mp-id').value=$('mp-name').value=$('mp-price').value=$('mp-cat').value=$('mp-notes').value='';
-    $('mp-title').textContent='Tambah Produk';
-    $('modal-p').classList.add('open');
-  }else{
-    $('mf-id').value=$('mf-cmd').value=$('mf-resp').value='';
-    $('mf-title').textContent='Tambah FAQ';
-    $('modal-f').classList.add('open');
-  }
-}
-
-function editProd(id){
-  const p=_prods.find(x=>(x._id||x.id)===id); if(!p)return;
-  $('mp-id').value=id; $('mp-name').value=p.nama_produk||p.name||'';
-  $('mp-price').value=p.harga||p.price||''; $('mp-cat').value=p.kategori||p.category||'';
-  $('mp-notes').value=p.keterangan||p.notes||'';
-  $('mp-title').textContent='Edit Produk'; $('modal-p').classList.add('open');
-}
-
-async function saveProduct(){
-  const id=$('mp-id').value, name=$('mp-name').value.trim(), price=$('mp-price').value;
-  if(!name||!price){toast('Nama dan harga wajib diisi','err');return;}
-  const d=await api(id?`/api/products/${id}`:'/api/products',{
-    method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({nama_produk:name,harga:price,kategori:$('mp-cat').value.trim()||'Umum',keterangan:$('mp-notes').value.trim()})
-  });
-  if(d.success){toast(id?'Produk diperbarui!':'Produk ditambahkan!');closeModal('modal-p');loadProducts();}
-  else toast(d.error||'Gagal','err');
-}
-
-async function delProd(id){
-  if(!confirm('Hapus produk ini?'))return;
-  const d=await api(`/api/products/${id}`,{method:'DELETE'});
-  d.success?(toast('Produk dihapus'),loadProducts()):toast(d.error,'err');
-}
-
-// ── FAQs ─────────────────────────────────────────────────
-let _faqs=[];
-
-async function loadFaqs(){
-  $('faqs-tbl').innerHTML='<div class="dempty">Memuat...</div>';
-  const d=await api('/api/faqs'); _faqs=d.faqs||[]; renderFaqs();
-}
-
-function renderFaqs(){
-  if(!_faqs.length){$('faqs-tbl').innerHTML='<div class="dempty">Belum ada FAQ. Ketuk "+ Tambah" untuk mulai.</div>';return;}
-  $('faqs-tbl').innerHTML=_faqs.map(f=>{
-    const id=f._id||f.id;
-    return`<div class="drow items-start">
-      <div class="flex-1" style="min-width:0">
-        <span style="background:var(--bg);border:1px solid var(--border);border-radius:5px;padding:2px 8px;font-family:'DM Mono',monospace;font-size:12px;color:var(--blue);display:inline-block;max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(f.command||'—')}</span>
-        <div class="text-xs text-muted mt-4 truncate">${esc(f.response||'—')}</div>
-      </div>
-      <div class="flex gap-6" style="margin-left:8px;flex-shrink:0">
-        <button class="btn btn-ghost btn-sm" onclick="editFaq('${id}')">Edit</button>
-        <button class="btn btn-danger btn-sm" onclick="delFaq('${id}')">✕</button>
-      </div>
-    </div>`;
-  }).join('');
-}
-
-function editFaq(id){
-  const f=_faqs.find(x=>(x._id||x.id)===id); if(!f)return;
-  $('mf-id').value=id; $('mf-cmd').value=f.command||''; $('mf-resp').value=f.response||'';
-  $('mf-title').textContent='Edit FAQ'; $('modal-f').classList.add('open');
-}
-
-async function saveFaq(){
-  const id=$('mf-id').value, cmd=$('mf-cmd').value.trim(), resp=$('mf-resp').value.trim();
-  if(!cmd||!resp){toast('Command dan balasan wajib diisi','err');return;}
-  const d=await api(id?`/api/faqs/${id}`:'/api/faqs',{
-    method:id?'PUT':'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({command:cmd,response:resp})
-  });
-  if(d.success){toast(id?'FAQ diperbarui!':'FAQ ditambahkan!');closeModal('modal-f');loadFaqs();}
-  else toast(d.error||'Gagal','err');
-}
-
-async function delFaq(id){
-  if(!confirm('Hapus FAQ ini?'))return;
-  const d=await api(`/api/faqs/${id}`,{method:'DELETE'});
-  d.success?(toast('FAQ dihapus'),loadFaqs()):toast(d.error,'err');
-}
-
-// ── MODALS ───────────────────────────────────────────────
-function closeModal(id){$(id).classList.remove('open')}
-function oclose(e,id){if(e.target===$(id))closeModal(id)}
-
-// ── PROFILE ─────────────────────────────────────────────
-let _profileData = null;
-
-async function loadProfile() {
-  const d = await api('/api/bot-profile');
-  if (!d.success) return;
-  _profileData = d.profile;
-  $('pp-name').textContent = d.profile.name || '—';
-  $('pp-phone').textContent = d.profile.phone || '—';
-  if (d.profile.pictureUrl) {
-    $('pp-img').src = d.profile.pictureUrl;
-    $('pp-img').style.display = 'block';
-  } else {
-    $('pp-img').style.display = 'none';
-  }
-  const bizBadge = $('pp-biz-badge');
-  const bizInfo = $('pp-business-info');
-  if (d.profile.isBusiness && d.profile.business) {
-    bizBadge.style.display = 'inline-flex';
-    const b = d.profile.business;
-    let info = '';
-    if (b.description) info += `<div class="text-sm mt-4">📝 ${esc(b.description)}</div>`;
-    if (b.address) info += `<div class="text-sm mt-4">📍 ${esc(b.address)}</div>`;
-    if (b.email) info += `<div class="text-sm mt-4">📧 ${esc(b.email)}</div>`;
-    if (b.website) info += `<div class="text-sm mt-4">🌐 ${esc(b.website)}</div>`;
-    bizInfo.innerHTML = info;
-    bizInfo.style.display = 'block';
-  } else {
-    bizBadge.style.display = 'none';
-    bizInfo.style.display = 'none';
-  }
-}
-
-async function updateProfile() {
-  const fileInput = $('pp-file');
-  const file = fileInput.files[0];
-  let base64Img = '';
-  
-  if (file) {
-    if (file.size > 2 * 1024 * 1024) {
-      toast('Foto maksimal 2MB', 'err');
-      return;
+    // --- LOAD PRODUCTS ---
+    async function loadProducts() {
+        const tbody = document.getElementById('product-list');
+        tbody.innerHTML = '<tr><td colspan="5" class="text-center">Memuat data...</td></tr>';
+        
+        try {
+            const response = await fetch('/api/products');
+            const data = await response.json();
+            
+            if (data.success) {
+                if (data.products.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center">Belum ada produk.</td></tr>';
+                    return;
+                }
+                
+                tbody.innerHTML = '';
+                data.products.forEach(p => {
+                    const tr = document.createElement('tr');
+                    tr.innerHTML = `
+                        <td><span class="user-badge">${p.kategori}</span></td>
+                        <td><strong>${p.nama_produk}</strong></td>
+                        <td>Rp ${p.harga.toLocaleString('id-ID')}</td>
+                        <td>${p.keterangan || '-'}</td>
+                        <td>
+                            <button class="btn btn-secondary btn-sm" onclick="editProduct(${p.id}, '${p.kategori}', '${p.nama_produk}', ${p.harga}, '${p.keterangan || ''}')">
+                                <i data-lucide="edit-2" style="width:14px; height:14px;"></i>
+                            </button>
+                            <button class="btn btn-danger btn-sm" onclick="deleteProduct(${p.id})">
+                                <i data-lucide="trash-2" style="width:14px; height:14px;"></i>
+                            </button>
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                });
+                lucide.createIcons();
+            }
+        } catch (err) {
+            tbody.innerHTML = '<tr><td colspan="5" class="text-center" style="color:red;">Gagal memuat daftar harga.</td></tr>';
+        }
     }
     base64Img = await new Promise((resolve) => {
       const reader = new FileReader();
