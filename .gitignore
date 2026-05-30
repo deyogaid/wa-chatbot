@@ -1,3 +1,46 @@
-node_modules
-auth_info_baileys
+
+# Node
+node_modules/
+
+# Environment files (secrets)
 .env
+.env.local
+.env.*
+
+# Baileys WhatsApp auth/session (contains private keys & credentials)
+auth_info_baileys/
+
+# Database files
+*.db
+*.sqlite
+kartini_bot.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Editor/IDE
+.vscode/
+.idea/
+
+# Build / Coverage
+dist/
+coverage/
+
+# Temp
+tmp/
+temp/
+
+# Public uploads or user generated - jika ada folder uploads
+public/uploads/
+
+# Ensure lockfile is tracked (optional) - comment out if you prefer to ignore lockfiles
+# package-lock.json
+# yarn.lock
